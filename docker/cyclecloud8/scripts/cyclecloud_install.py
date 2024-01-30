@@ -364,15 +364,16 @@ def modify_cs_config(options):
         with open(cs_config_file) as cs_config:
             for line in cs_config:
                 if line.startswith('webServerMaxHeapSize='):
-                    new_config.write('webServerMaxHeapSize={}\n'.format(options['webServerMaxHeapSize']))
-                elif line.startswith('webServerPort='):
-                    new_config.write('webServerPort={}\n'.format(options['webServerPort']))
+                    new_config.write('webServerMaxHeapSize={}\n'.format(options['webServerMaxHeapSize'])
+                elif line.startswith('webServerPort='):                    
+                    # Port numbers may not be empty
+                    new_config.write('webServerPort={}\n'.format(options['webServerPort'] if options['webServerPort'] else 8080))  
                 elif line.startswith('webServerSslPort='):
-                    new_config.write('webServerSslPort={}\n'.format(options['webServerSslPort']))
+                    new_config.write('webServerSslPort={}\n'.format(options['webServerSslPort'] if options['webServerSslPort'] else 8443))
                 elif line.startswith('webServerClusterPort'):
-                    new_config.write('webServerClusterPort={}\n'.format(options['webServerClusterPort']))
+                    new_config.write('webServerClusterPort={}\n'.format(options['webServerClusterPort'] if options['webServerClusterPort'] else 9443))
                 elif line.startswith('webServerEnableHttps='):
-                    new_config.write('webServerEnableHttps={}\n'.format(str(options['webServerEnableHttps']).lower()))
+                    new_config.write('webServerEnableHttps={}\n'.format(str(options['webServerEnableHttps']).lower()) if options['webServerEnableHttps'] else 'true')
                 elif line.startswith('webServerHostname'):
                     # This isn't generally a default setting, so set it below
                     continue
@@ -597,7 +598,7 @@ def main():
         configure_msft_repos()
         install_pre_req()
         download_install_cc()
-
+    
     modify_cs_config(options = {'webServerMaxHeapSize': args.webServerMaxHeapSize,
                                 'webServerPort': args.webServerPort,
                                 'webServerSslPort': args.webServerSslPort,
