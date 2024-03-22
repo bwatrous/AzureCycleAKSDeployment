@@ -364,7 +364,7 @@ def modify_cs_config(options):
         with open(cs_config_file) as cs_config:
             for line in cs_config:
                 if line.startswith('webServerMaxHeapSize='):
-                    new_config.write('webServerMaxHeapSize={}\n'.format(options['webServerMaxHeapSize'])
+                    new_config.write('webServerMaxHeapSize={}\n'.format(options['webServerMaxHeapSize']))
                 elif line.startswith('webServerPort='):                    
                     # Port numbers may not be empty
                     new_config.write('webServerPort={}\n'.format(options['webServerPort'] if options['webServerPort'] else 8080))  
