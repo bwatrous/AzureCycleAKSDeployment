@@ -514,6 +514,11 @@ def main():
                         dest="applicationSecret",
                         help="Application Secret of the Service Principal")
 
+    parser.add_argument("--createAdminUser",
+                        dest="createAdminUser",
+                        action="store_false",
+                        help="Configure the CC Admin user with SSH key (default: False - requires root privileges)")
+
     parser.add_argument("--username",
                         dest="username",
                         default="cc_admin",
@@ -632,7 +637,8 @@ def main():
         letsEncrypt(args.hostname)
 
     #  Create user requires root privileges
-    # create_user_credential(args.username, args.publickey)
+    if args.createAdminUser:
+        create_user_credential(args.username, args.publickey)
 
     clean_up()
 
@@ -643,4 +649,3 @@ if __name__ == "__main__":
     except:
         print("Deployment failed...")
         raise
-
