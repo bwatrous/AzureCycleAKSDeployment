@@ -516,7 +516,7 @@ def main():
 
     parser.add_argument("--createAdminUser",
                         dest="createAdminUser",
-                        action="store_false",
+                        action="store_true",
                         help="Configure the CC Admin user with SSH key (default: False - requires root privileges)")
 
     parser.add_argument("--username",
