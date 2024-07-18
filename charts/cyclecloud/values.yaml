@@ -5,6 +5,21 @@ azureIdentity:
   resourceID: /subscriptions/%SUBSCRIPTION_ID%/resourcegroups/cc-aks-tf-nodes-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cc-aks-tf-ui
   clientID: 123
 
+securityContext:  
+  podSecurityContext:
+    seccompProfile:                 # SecComp profile
+      type: RuntimeDefault
+    fsGroup: 1169
+    supplementalGroups:
+    - 1169
+  containerSecurityContext:
+    readOnlyRootFilesystem: false
+    runAsNonRoot: true
+    runAsUser: 1169
+    runAsGroup: 1169
+    privileged: false
+    allowPrivilegeEscalation: false
+
 cycle:
   replicas: 1
   dataDiskSize: 256Gi
@@ -28,7 +43,31 @@ cycle:
   forceDeleteVMsEnabled : false
   forceDeleteVMSSsEnabled : false
 
+
+
+
+#tolerations: []
+tolerations:
+  - key: "kubernetes.azure.com/scalesetpriority"
+    operator: "Equal"
+    value: "spot"
+    effect: "NoSchedule"
+
+
 service:
   type: LoadBalancer
   port: 443
+
+resources:
+  requests:
+    memory: "32Gi"
+    cpu: "8"
+  limits:
+    memory: "32Gi"
+    cpu: "8"
+
+volume:
+  storageClassName: premium-disk
+  volumeMode: Filesystem
+  volumeName: ""
 
