@@ -31,11 +31,8 @@ spec:
         value: "spot"
         effect: "NoSchedule"
       # Set non-root user id (cycle_server) for volume ownership
-      securityContext:
-        runAsUser: {{ .Values.cycle.uid }}
-        runAsGroup: {{ .Values.cycle.gid }}
-        fsGroup: {{ .Values.cycle.gid }}
-        supplementalGroups: [{{ .Values.cycle.gid }}]
+      securityContext: 
+          {{- toYaml .Values.securityContext.podSecurityContext | nindent 10 }}
       containers:
       - env:
         - name: CYCLECLOUD_USERNAME
@@ -74,17 +71,37 @@ spec:
         image: "{{ .Values.cycle.containerImage }}"
         resources:
           requests:
-            memory: "32Gi"
-            cpu: "8"
+            memory: "{{ .Values.resources.requests.memory }}"
+            cpu: "{{ .Values.resources.requests.cpu }}"
           limits:
-            memory: "32Gi"
-            cpu: "8"
-        command: ["/bin/bash", "scripts/run_cyclecloud.sh"]
+            memory: "{{ .Values.resources.limits.memory }}"
+            cpu: "{{ .Values.resources.limits.cpu }}"
+        command: ["/bin/bash"]
         securityContext:
           {{- toYaml .Values.securityContext.containerSecurityContext | nindent 10 }}
+        args: ["-c", "chmod +x scripts/run_cyclecloud.sh && ./scripts/run_cyclecloud.sh"]
         name: cycle
         ports:
         - containerPort: 8443
+
+        livenessProbe:
+          httpGet:
+            path: /health_monitor
+            port: 8443
+            scheme: HTTPS
+          failureThreshold: 15
+          timeoutSeconds: 60
+          periodSeconds: 60
+          initialDelaySeconds: 400
+
+        readinessProbe:
+          httpGet:
+            path: /health_monitor
+            port: 8443
+            scheme: HTTPS
+          failureThreshold: 30
+          initialDelaySeconds: 60
+          periodSeconds: 10
 
         volumeMounts:
         - mountPath: "/opt/cycle_server/data"
@@ -99,16 +116,6 @@ spec:
         - mountPath: "/opt/cycle_server/work"
           name: cyclecloud-data-volume
           subPath: work
-        - mountPath: "/tmp/cc_script"
-          name: script-config-volume
-        - mountPath: /etc/config
-          name: config-volume
-        - mountPath: /opt/cycle_server/config/data/disable_metrics_collector.txt
-          name: cc-additional-config
-          subPath: disable_metrics_collector.txt
-        - mountPath: /opt/cycle_server/config/data/disable_backups.txt
-          name: cc-additional-config
-          subPath: disable_backups.txt
         - mountPath: /cs-install/prometheus_exporter_config.yaml
           name: prometheus-config-volume
 
@@ -117,17 +124,6 @@ spec:
       - name: cyclecloud-data-volume
         persistentVolumeClaim:
           claimName: {{ include "cyclecloud.fullname" . }}
-      - name: config-volume
-        configMap:
-          name: cc-storage-config
-      - name: script-config-volume
-        configMap:
-          name: cc-script-config
-      - name: cc-additional-config
-        configMap:
-          name: cc-additional-config
       - name: prometheus-config-volume
         configMap:
           name: prometheus-exporter-config
-   
-    

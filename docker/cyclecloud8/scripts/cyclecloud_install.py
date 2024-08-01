@@ -153,7 +153,8 @@ def cyclecloud_account_setup(vm_metadata, use_managed_identity, use_workload_ide
         storage_account_name = 'cyclecloud{}'.format(random_suffix)
     
     if use_workload_identity:
-        azure_data_workload = get_workload_identity()
+        get_workload_identity()
+        
         
     azure_data = {
         "Environment": azure_cloud,
@@ -185,7 +186,6 @@ def cyclecloud_account_setup(vm_metadata, use_managed_identity, use_workload_ide
     
     if use_workload_identity:
         azure_data["AzureRMUseWorkloadIdentity"] = True
-        azure_data.update(azure_data_workload)
 
     app_setting_installation = {
         "AdType": "Application.Setting",
@@ -335,12 +335,10 @@ def get_workload_identity():
         azure_tenant_id = os.environ['AZURE_TENANT_ID']
         azure_client_id = os.environ['AZURE_CLIENT_ID']
         azure_federated_token_file = os.environ.get('AZURE_FEDERATED_TOKEN_FILE')
-        azure_data_workload = {"AzureRMAuthorityHost": azure_authority_host, "AzureRMTenantId": azure_tenant_id, "AzureRMClientID": azure_client_id, "AzureRMFederatedTokenFile": azure_federated_token_file}
-        return azure_data_workload
+        print("Workload Identity exists")
     except KeyError:
         print("AZURE_AUTHORITY_HOST, AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_FEDERATED_TOKEN_FILE environment variables must be set to use workload identity")
-        raise
-    return        
+        raise      
 
 
 def start_cc():
