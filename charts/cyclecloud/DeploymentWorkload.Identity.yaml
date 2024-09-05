@@ -61,6 +61,8 @@ spec:
           value: "{{ .Values.cycle.forceDeleteVMsEnabled }}"
         - name: CYCLECLOUD_FORCE_DELETE_VMSS
           value: "{{ .Values.cycle.forceDeleteVMSSsEnabled }}"
+        - name: USE_WORKLOAD_IDENTITY
+          value: "{{ .Values.cycle.useWorkloadIdentity}}"
         {{- if eq .Values.cycle.configureDefaultAccount false }}
         - name: NO_DEFAULT_ACCOUNT
           value: "--noDefaultAccount"
@@ -118,7 +120,6 @@ spec:
           subPath: work
         - mountPath: /cs-install/prometheus_exporter_config.yaml
           name: prometheus-config-volume
-
 
       volumes:
       - name: cyclecloud-data-volume

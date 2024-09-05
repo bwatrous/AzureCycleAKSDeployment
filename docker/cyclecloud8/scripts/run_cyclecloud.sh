@@ -84,8 +84,14 @@ fi
 # Special case: JVM Options are complex and difficult to pass through arguments.  
 # Instead, set them in the environment:
 #     CYCLECLOUD_WEBSERVER_JVM_OPTIONS
+if [ $USE_WORKLOAD_IDENTITY == "true" ]; then
+    IDENTITY_TYPE="--useWorkloadIdentity"
+else
+    IDENTITY_TYPE="--useManagedIdentity"
+fi
+
 python3 /cs-install/scripts/cyclecloud_install.py --acceptTerms \
-    --useWorkloadIdentity --username=${CYCLECLOUD_USERNAME} --password="${CYCLECLOUD_PASSWORD}" \
+    ${IDENTITY_TYPE} --username=${CYCLECLOUD_USERNAME} --password="${CYCLECLOUD_PASSWORD}" \
     --publickey="${CYCLECLOUD_USER_PUBKEY}" \
     --storageAccount=${CYCLECLOUD_STORAGE} \
     --resourceGroup=${CYCLECLOUD_RESOURCE_GROUP} ${DRYRUN} ${NO_DEFAULT_ACCOUNT} \

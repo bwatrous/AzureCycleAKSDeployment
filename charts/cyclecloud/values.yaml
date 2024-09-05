@@ -42,7 +42,7 @@ cycle:
   containerImage: 123
   forceDeleteVMsEnabled : false
   forceDeleteVMSSsEnabled : false
-
+  useWorkloadIdentity: false
 
 
 
