@@ -1,9 +1,9 @@
-FROM centos:centos8
+FROM mcr.microsoft.com/mirror/docker/library/ubuntu:22.04
 
 WORKDIR /cs-install
-ENV CS_UID 1169
-ENV CS_GID 1169
-ENV CS_ROOT /opt/cycle_server
+ENV CS_UID=1169
+ENV CS_GID=1169
+ENV CS_ROOT=/opt/cycle_server
 
 ADD https://aka.ms/downloadazcopy-v10-linux /tmp/azcopy_linux.tar.gz
 

@@ -3,10 +3,11 @@ kind: StatefulSet
 metadata:
   creationTimestamp: null
   labels:
-    aadpodidbinding: cc-aks-tf-ui-selector
     {{- include "cyclecloud.labels" . | nindent 4 }}
+    azure.workload.identity/use: "true"  # Required. Only pods with this label can use workload identity.
   name: {{ include "cyclecloud.fullname" . }}
 spec:
+  serviceAccountName: "cyclecloud-sa"
   replicas: {{ .Values.cycle.replicas }}
   updateStrategy: 
     type: "RollingUpdate"
@@ -21,8 +22,9 @@ spec:
         container.seccomp.security.alpha.kubernetes.io/nginx: runtime/default
       labels:
         {{- include "cyclecloud.selectorLabels" . | nindent 8 }}
-        aadpodidbinding: cc-aks-tf-ui-selector
+        azure.workload.identity/use: "true"  # Required. Only pods with this label can use workload identity.
     spec:
+      serviceAccountName: "cyclecloud-sa"
       tolerations:
       - key: "kubernetes.azure.com/scalesetpriority"
         operator: "Equal"
@@ -59,6 +61,8 @@ spec:
           value: "{{ .Values.cycle.forceDeleteVMsEnabled }}"
         - name: CYCLECLOUD_FORCE_DELETE_VMSS
           value: "{{ .Values.cycle.forceDeleteVMSSsEnabled }}"
+        - name: USE_WORKLOAD_IDENTITY
+          value: "{{ .Values.cycle.useWorkloadIdentity}}"
         {{- if eq .Values.cycle.configureDefaultAccount false }}
         - name: NO_DEFAULT_ACCOUNT
           value: "--noDefaultAccount"
