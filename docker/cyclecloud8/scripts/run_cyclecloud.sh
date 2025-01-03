@@ -84,7 +84,7 @@ fi
 # Special case: JVM Options are complex and difficult to pass through arguments.  
 # Instead, set them in the environment:
 #     CYCLECLOUD_WEBSERVER_JVM_OPTIONS
-if [ $USE_WORKLOAD_IDENTITY == "true" ]; then
+if [ ${USE_WORKLOAD_IDENTITY} == "true" ]; then
     IDENTITY_TYPE="--useWorkloadIdentity"
 else
     IDENTITY_TYPE="--useManagedIdentity"
@@ -99,7 +99,8 @@ python3 /cs-install/scripts/cyclecloud_install.py --acceptTerms \
     --webServerPort=${CYCLECLOUD_WEBSERVER_PORT} \
     --webServerSslPort=${CYCLECLOUD_WEBSERVER_SSL_PORT} \
     --webServerClusterPort=${CYCLECLOUD_WEBSERVER_CLUSTER_PORT} \
-    --webServerHostname="${CYCLECLOUD_HOSTNAME}"
+    --webServerHostname="${CYCLECLOUD_HOSTNAME}" \
+    --storage_managed_identity="${STORAGE_MANAGED_IDENTITY}" 
 
 
 # Enable force delete if specified
