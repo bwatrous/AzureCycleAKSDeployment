@@ -478,7 +478,7 @@ def configure_msft_apt_repos(insiders_build=False):
 
     with open('/etc/apt/sources.list.d/cyclecloud.list', 'w') as f:
         
-        f.write("deb [arch=amd64] https://packages.microsoft.com/repos/cyclecloud{'-insiders' if insiders_build else ''} {} main".format(lsb_release))
+        f.write(f"deb [arch=amd64] https://packages.microsoft.com/repos/cyclecloud{'-insiders' if insiders_build else ''} {lsb_release} main")
     _catch_sys_error(["apt", "update", "-y"])
 
 def configure_msft_yum_repos(insiders_build=False):
