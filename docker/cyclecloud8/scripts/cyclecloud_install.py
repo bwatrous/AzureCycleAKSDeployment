@@ -120,7 +120,7 @@ def reset_cyclecloud_pw(username):
   
 def cyclecloud_account_setup(vm_metadata, use_managed_identity, use_workload_identity, tenant_id, application_id, application_secret,
                              admin_user, azure_cloud, accept_terms, password, storageAccount, no_default_account, 
-                             webserver_port):
+                             webserver_port, storage_managed_identity):
 
     print("Setting up azure account in CycleCloud and initializing cyclecloud CLI")
 
@@ -186,7 +186,12 @@ def cyclecloud_account_setup(vm_metadata, use_managed_identity, use_workload_ide
     
     if use_workload_identity:
         azure_data["AzureRMUseWorkloadIdentity"] = True
-
+    
+    if storage_managed_identity:
+        azure_data["LockerIdentity"] = storage_managed_identity
+        azure_data["LockerAuthMode"] = "ManagedIdentity"
+    else:
+        azure_data["LockerAuthMode"] = "SharedAccessKey"
     app_setting_installation = {
         "AdType": "Application.Setting",
         "Name": "cycleserver.installation.complete",
@@ -454,13 +459,13 @@ def download_install_cc():
     else:
         _catch_sys_error(["yum", "install", "-y", "cyclecloud8"])
 
-def configure_msft_repos():
+def configure_msft_repos(insiders_build=False):
     if "ubuntu" in str(platform.platform()).lower():
-        configure_msft_apt_repos()
+        configure_msft_apt_repos(insiders_build)
     else:
-        configure_msft_yum_repos()
+        configure_msft_yum_repos(insiders_build)
 
-def configure_msft_apt_repos():
+def configure_msft_apt_repos(insiders_build=False):
     print("Configuring Microsoft apt repository for CycleCloud install")
     _catch_sys_error(
         ["wget", "-q", "-O", "/tmp/microsoft.asc", "https://packages.microsoft.com/keys/microsoft.asc"])
@@ -472,19 +477,20 @@ def configure_msft_apt_repos():
         f.write("deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ {} main".format(lsb_release))
 
     with open('/etc/apt/sources.list.d/cyclecloud.list', 'w') as f:
-        f.write("deb [arch=amd64] https://packages.microsoft.com/repos/cyclecloud {} main".format(lsb_release))
+        
+        f.write(f"deb [arch=amd64] https://packages.microsoft.com/repos/cyclecloud{'-insiders' if insiders_build else ''} {lsb_release} main")
     _catch_sys_error(["apt", "update", "-y"])
 
-def configure_msft_yum_repos():
+def configure_msft_yum_repos(insiders_build=False):
     print("Configuring Microsoft yum repository for CycleCloud install")
     _catch_sys_error(
         ["rpm", "--import", "https://packages.microsoft.com/keys/microsoft.asc"])
 
     with open('/etc/yum.repos.d/cyclecloud.repo', 'w') as f:
-        f.write("""\
+        f.write(f"""\
 [cyclecloud]
 name=cyclecloud
-baseurl=https://packages.microsoft.com/yumrepos/cyclecloud
+baseurl=https://packages.microsoft.com/yumrepos/cyclecloud{'-insiders' if insiders_build else ''}
 gpgcheck=1
 gpgkey=https://packages.microsoft.com/keys/microsoft.asc
 """)
@@ -623,13 +629,21 @@ def main():
                         dest="webServerHostname",
                         default="",
                         help="Over-ride CycleCloud hostname for cluster/back-end connections")
-
+    parser.add_argument("--insidersBuild",
+                        dest="insidersBuild",
+                        default=False,
+                        action="store_true",
+                        help="Use insiders build of CycleCloud")
+    parser.add_argument("--storageManagedIdentity",
+                        dest="storageManagedIdentity",
+                        default=None,
+                        help="Use a specified Managed Identity for storage access from the compute nodes")
     args = parser.parse_args()
 
     print("Debugging arguments: %s" % args)
 
     if not already_installed():
-        configure_msft_repos()
+        configure_msft_repos(args.insidersBuild)
         install_pre_req()
         download_install_cc()
     
@@ -660,7 +674,7 @@ def main():
     cyclecloud_account_setup(vm_metadata, args.useManagedIdentity, args.useWorkloadIdentity, args.tenantId, args.applicationId,
                              args.applicationSecret, args.username, args.azureSovereignCloud,
                              args.acceptTerms, args.password, args.storageAccount, 
-                             args.no_default_account, args.webServerSslPort)
+                             args.no_default_account, args.webServerSslPort, args.storageManagedIdentity)
 
     if args.useLetsEncrypt:
         letsEncrypt(args.hostname)
