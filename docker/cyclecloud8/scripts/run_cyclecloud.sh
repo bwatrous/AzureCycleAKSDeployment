@@ -100,7 +100,7 @@ python3 /cs-install/scripts/cyclecloud_install.py --acceptTerms \
     --webServerSslPort=${CYCLECLOUD_WEBSERVER_SSL_PORT} \
     --webServerClusterPort=${CYCLECLOUD_WEBSERVER_CLUSTER_PORT} \
     --webServerHostname="${CYCLECLOUD_HOSTNAME}" \
-    --storage_managed_identity="${STORAGE_MANAGED_IDENTITY}" 
+    --storageManagedIdentity="${STORAGE_MANAGED_IDENTITY}" 
 
 
 # Enable force delete if specified

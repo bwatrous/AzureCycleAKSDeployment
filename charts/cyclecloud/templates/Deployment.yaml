@@ -63,6 +63,8 @@ spec:
           value: "{{ .Values.cycle.forceDeleteVMSSsEnabled }}"
         - name: USE_WORKLOAD_IDENTITY
           value: "{{ .Values.cycle.useWorkloadIdentity}}"
+        - name: STORAGE_MANAGED_IDENTITY
+          value: "{{ .Values.cycle.storage_managed_identity}}"
         {{- if eq .Values.cycle.configureDefaultAccount false }}
         - name: NO_DEFAULT_ACCOUNT
           value: "--noDefaultAccount"

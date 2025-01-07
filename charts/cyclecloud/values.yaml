@@ -43,7 +43,7 @@ cycle:
   forceDeleteVMsEnabled : false
   forceDeleteVMSSsEnabled : false
   useWorkloadIdentity: false
-
+  storage_managed_identity: "<resource-id>"
 
 
 #tolerations: []
