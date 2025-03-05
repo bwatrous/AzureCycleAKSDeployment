@@ -72,6 +72,13 @@ spec:
         - name: WILL_CONFIGURE_DEFAULT_ACCOUNT
           value: "Will configure default CycleCloud account {{.Values.cycle.configureDefaultAccount}} : {{(eq .Values.cycle.configureDefaultAccount false)}}."
         {{- end }}
+        {{- if eq .Values.cycle.not_generate_cs_config false }}
+        - name: GENERATE_CS_CONFIG
+          value: "Will generate cycle_server.properties config"
+        {{- else }}
+        - name: NOT_GENERATE_CS_CONFIG
+          value: "{{ .Values.cycle.not_generate_cs_config }}"
+        {{- end }}
         image: "{{ .Values.cycle.containerImage }}"
         resources:
           requests:
