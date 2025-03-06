@@ -90,6 +90,12 @@ else
     IDENTITY_TYPE="--useManagedIdentity"
 fi
 
+if [ ${GENERATE_CS_CONFIG} == "false" ]; then
+    GENERATE_CS_CONFIG=""
+else
+    GENERATE_CS_CONFIG="--generateCsConfig"
+fi
+
 python3 /cs-install/scripts/cyclecloud_install.py --acceptTerms \
     ${IDENTITY_TYPE} --username=${CYCLECLOUD_USERNAME} --password="${CYCLECLOUD_PASSWORD}" \
     --publickey="${CYCLECLOUD_USER_PUBKEY}" \
@@ -100,8 +106,8 @@ python3 /cs-install/scripts/cyclecloud_install.py --acceptTerms \
     --webServerSslPort=${CYCLECLOUD_WEBSERVER_SSL_PORT} \
     --webServerClusterPort=${CYCLECLOUD_WEBSERVER_CLUSTER_PORT} \
     --webServerHostname="${CYCLECLOUD_HOSTNAME}" \
-    --storageManagedIdentity="${STORAGE_MANAGED_IDENTITY}" \
-    --notGenerateCsConfig="${NOT_GENERATE_CS_CONFIG}" 
+    --storageManagedIdentity="${STORAGE_MANAGED_IDENTITY}" ${GENERATE_CS_CONFIG} \
+    
 
 
 # Enable force delete if specified

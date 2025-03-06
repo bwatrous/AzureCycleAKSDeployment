@@ -44,7 +44,7 @@ cycle:
   forceDeleteVMSSsEnabled : false
   useWorkloadIdentity: false
   storage_managed_identity: "<resource-id>"
-  not_generate_cs_config: "false"
+  generate_cs_config: "true"
 
 
 #tolerations: []
