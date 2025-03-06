@@ -136,3 +136,23 @@ sed -i.bak "s|%CYCLECLOUD_RESOURCE_GROUP%|${CYCLECLOUD_RESOURCE_GROUP}|g" ./cycl
 
 kubectl apply -f cyclecloud.yaml
 ```
+
+## Description of values.yaml parameters for helm chart
+
+azureIdentity: This parameter is only required when using managed identity for cyclecloud orchestration. It basically stores the resource id of managed identity and client id which would be used in Deployment.yaml file in case of using pod identity.
+
+Parameters under Values.cycle are cyclecloud related parameters.Most of them are self-explantory, details of few:
+
+configureDefaultAccount: If you want to create an azure account by default then it will be created if set to true.
+
+storage: Specifies the storage account to use in case of intial account creation.
+
+useWorkloadIdentity: If you are using workload identity then this needs to be set to true and azureIdentity is not required in this case.
+
+storage_managed_identity: When using managed identity for storage account you need to set this to true. Also you need to assign Storage Blob Reader role to this identity for storage account. 
+Note: If you are using managed identity for storage you also need to assign Storage Blob Data Contributor role to the Cyclecloud identity (Workload Identity or Managed Identity)
+
+generate_cs_config: By default the container script will generate cycle_server.properties file but if you want to use ConfigMap for cycle_server.properties then you can disable this option to skip generation of file. 
+
+
+

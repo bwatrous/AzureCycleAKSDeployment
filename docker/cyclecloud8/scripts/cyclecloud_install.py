@@ -416,7 +416,8 @@ def modify_cs_config(options):
                         new_config.write(line)
                 else:
                     new_config.write(line)
-
+            # Adding new line to add new properties to avoid concatenation/overwritting        
+            new_config.write('\n\n')
             if 'webServerHostname' in options and options['webServerHostname']:
                 new_config.write('webServerHostname={}\n'.format(options['webServerHostname']))
 
@@ -638,6 +639,10 @@ def main():
                         dest="storageManagedIdentity",
                         default=None,
                         help="Use a specified Managed Identity for storage access from the compute nodes")
+    parser.add_argument("--generateCsConfig",
+                        dest="generateCsConfig",
+                        action="store_true",
+                        help="Generate a cyclecloud config file")
     args = parser.parse_args()
 
     print("Debugging arguments: %s" % args)
@@ -647,7 +652,10 @@ def main():
         install_pre_req()
         download_install_cc()
     
-    modify_cs_config(options = {'webServerMaxHeapSize': args.webServerMaxHeapSize,
+    if not args.generateCsConfig:
+        print("Skipping CycleCloud config generation")
+    else:
+        modify_cs_config(options = {'webServerMaxHeapSize': args.webServerMaxHeapSize,
                                 'webServerPort': args.webServerPort,
                                 'webServerSslPort': args.webServerSslPort,
                                 'webServerClusterPort': args.webServerClusterPort,
