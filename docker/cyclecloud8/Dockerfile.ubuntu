@@ -1,5 +1,5 @@
 #syntax=docker/dockerfile:1
-FROM mcr.microsoft.com/mirror/docker/library/ubuntu:22.04
+FROM mcr.microsoft.com/mirror/docker/library/ubuntu:24.04
 
 WORKDIR /cs-install
 ENV CS_UID=1169
@@ -17,7 +17,7 @@ ADD --checksum=sha256:7d61f737fd661610ccc14aea79764faa1ea94a340cbc8f0029b3d2edea
 RUN apt clean \
     && apt update -y \
     && apt upgrade -y \
-    && apt install -y  apt-utils openjdk-8-jre-headless less vim wget gnupg2 unzip libncurses5 ca-certificates curl apt-transport-https lsb-release
+    && apt install -y  apt-utils openjdk-8-jre-headless less vim wget gnupg2 unzip libncurses-dev ca-certificates curl apt-transport-https lsb-release
 
 
 RUN apt update -y \
@@ -28,7 +28,7 @@ RUN apt update -y \
     && tar xzf /tmp/azcopy_linux.tar.gz -C /tmp/ \
     && mv /tmp/azcopy_linux*/azcopy /usr/local/bin/azcopy \
     && rm -rf /tmp/azcopy_linux* \
-    && echo "deb https://packages.microsoft.com/repos/cyclecloud bionic main" > /etc/apt/sources.list.d/cyclecloud.list \
+    && echo "deb https://packages.microsoft.com/repos/cyclecloud stable main" > /etc/apt/sources.list.d/cyclecloud.list \
     && apt install -y python3-venv \
     && update-alternatives --install /usr/bin/python python /usr/bin/python3 1 \
     && apt -y update
