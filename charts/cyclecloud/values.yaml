@@ -45,6 +45,14 @@ cycle:
   useWorkloadIdentity: false
   storage_managed_identity: "<resource-id>"
   generate_cs_config: "true"
+  entraEnabled: false
+  entraUID: 19000
+  entraTenantId: "<EntraTenantId>"
+  entraClientId: "<EntraClientId>"
+  entraObjectId: "<SP-or-MIObjectId>"
+  entraAuthEndpoint: "<EntraAuthEndpoint>"
+  entraUsername: "<EntraUsername>"
+
 
 
 #tolerations: []

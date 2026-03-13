@@ -96,6 +96,12 @@ else
     GENERATE_CS_CONFIG="--generateCsConfig"
 fi
 
+if [ "${ENTRA_ENABLED}" = "true" ]; then
+    ENTRA_ENABLED="--entraEnabled"
+else
+    ENTRA_ENABLED=""
+fi
+
 python3 /cs-install/scripts/cyclecloud_install.py --acceptTerms \
     ${IDENTITY_TYPE} --username=${CYCLECLOUD_USERNAME} --password="${CYCLECLOUD_PASSWORD}" \
     --publickey="${CYCLECLOUD_USER_PUBKEY}" \
@@ -106,7 +112,13 @@ python3 /cs-install/scripts/cyclecloud_install.py --acceptTerms \
     --webServerSslPort=${CYCLECLOUD_WEBSERVER_SSL_PORT} \
     --webServerClusterPort=${CYCLECLOUD_WEBSERVER_CLUSTER_PORT} \
     --webServerHostname="${CYCLECLOUD_HOSTNAME}" \
-    --storageManagedIdentity="${STORAGE_MANAGED_IDENTITY}" ${GENERATE_CS_CONFIG} \
+    --storageManagedIdentity="${STORAGE_MANAGED_IDENTITY}" ${GENERATE_CS_CONFIG} ${ENTRA_ENABLED} \
+    --entraTenantId="${ENTRA_TENANT_ID}" \
+    --entraClientId="${ENTRA_CLIENT_ID}" \
+    --entraObjectId="${ENTRA_OBJECT_ID}" \
+    --entraAuthEndpoint="${ENTRA_AUTH_ENDPOINT}" \
+    --entraUsername="${ENTRA_USERNAME}" \
+    --entraUID="${ENTRA_UID}"
     
 
 
