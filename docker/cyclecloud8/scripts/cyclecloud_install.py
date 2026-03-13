@@ -333,6 +333,21 @@ Value = true
 Name = "authentication.entra.enabled"
 ParameterType = "Boolean"
 
+AdType = "Application.Setting"
+Name = "cycleserver.installation.complete"
+Value = true
+
+Category = "system"
+Status = "internal"
+AdType = "Application.Setting"
+Description = "CycleCloud distribution method e.g. marketplace, container, manual."
+Value = "container"
+Name = "distribution_method"
+
+AdType = "Application.Setting"
+Name = "cycleserver.installation.initial_user"
+Value = "{cyclecloud_username}"
+
 Authentication = "internal"
 EntraTID = "{entra_tenant_id}"
 UID = {entra_uid}
