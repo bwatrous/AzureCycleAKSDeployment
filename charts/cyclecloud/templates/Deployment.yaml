@@ -105,6 +105,11 @@ spec:
         - containerPort: 8443
 
         livenessProbe:
+          # Temporary commenting until bug in CC is fixed for negative serial number in self-signed cert. 
+          # httpGet:
+          #   path: /health_monitor
+          #   port: 8443
+          #   scheme: HTTPS
           exec:
             command:
             - curl
@@ -118,6 +123,11 @@ spec:
           initialDelaySeconds: 400
 
         readinessProbe:
+          # Temporary commenting until bug in CC is fixed for negative serial number in self-signed cert. 
+          # httpGet:
+          #   path: /health_monitor
+          #   port: 8443
+          #   scheme: HTTPS
           exec:
             command:
             - curl

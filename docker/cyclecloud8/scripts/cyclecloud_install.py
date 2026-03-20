@@ -26,6 +26,44 @@ cs_cmd = cycle_root + "/cycle_server"
 def clean_up():
     rmtree(tmpdir)
 
+
+def _distribution_method_record():
+    return {
+        "Category": "system",
+        "Status": "internal",
+        "AdType": "Application.Setting",
+        "Description": "CycleCloud distribution method e.g. marketplace, container, manual.",
+        "Value": "container",
+        "Name": "distribution_method"
+    }
+
+
+def _installation_complete_record():
+    return {
+        "AdType": "Application.Setting",
+        "Name": "cycleserver.installation.complete",
+        "Value": True
+    }
+
+
+def _initial_user_record(username):
+    return {
+        "AdType": "Application.Setting",
+        "Name": "cycleserver.installation.initial_user",
+        "Value": username
+    }
+
+
+def _write_config_data(data, filename):
+    """Write data as JSON to a temp file, set ownership, and move to CycleCloud config/data/."""
+    data_file = os.path.join(tmpdir, filename)
+    with open(data_file, 'w') as fp:
+        json.dump(data, fp)
+    _catch_sys_error(["chown", "cycle_server:cycle_server", data_file])
+    config_path = os.path.join(cycle_root, "config/data/")
+    _catch_sys_error(["mv", data_file, config_path])
+
+
 def _catch_sys_error(cmd_list):
     try:
         output = check_output(cmd_list)
@@ -82,17 +120,8 @@ def create_user_credential(username, public_key=None):
         "CredentialType": "PublicKey",
         "Name": username + "/public"
     }
-    credential_data_file = os.path.join(tmpdir, "credential.json")
-    print("Creating cred file: {}".format(credential_data_file))
-    with open(credential_data_file, 'w') as fp:
-        json.dump(credential_record, fp)
-
-    config_path = os.path.join(cycle_root, "config/data/")
-    print("Copying config to {}".format(config_path))
-    _catch_sys_error(["chown", "cycle_server:cycle_server", credential_data_file])
-    # Don't use copy2 here since ownership matters
-    # copy2(credential_data_file, config_path)
-    _catch_sys_error(["mv", credential_data_file, config_path])
+    print("Creating cred file: credential.json")
+    _write_config_data(credential_record, "credential.json")
 
 def generate_password_string():
     random_pw_chars = ([random.choice(ascii_lowercase) for _ in range(20)] +
@@ -118,6 +147,107 @@ def reset_cyclecloud_pw(username):
     _catch_sys_error([cs_cmd, 'execute', update_cmd])
     return pw 
 
+
+def setup_local_account(admin_user, accept_terms, password, webserver_port):
+    if not accept_terms:
+        print("Accept terms was FALSE !!!!!  Over-riding for now...")
+        accept_terms = True
+
+    cyclecloud_admin_pw = ""
+    if password:
+        print('Password specified, using it as the admin password')
+        cyclecloud_admin_pw = password
+    else:
+        cyclecloud_admin_pw = generate_password_string()
+
+    account_data = [
+        _initial_user_record(admin_user),
+        _distribution_method_record(),
+        _installation_complete_record()
+    ]
+
+    if accept_terms:
+        # Terms accepted, auto-create login user account as well
+        login_user = {
+            "AdType": "AuthenticatedUser",
+            "Name": admin_user,
+            "RawPassword": cyclecloud_admin_pw,
+            "Superuser": True
+        }
+        account_data.append(login_user)
+
+    _write_config_data(account_data, "account_data.json")
+    sleep(5)
+
+    if not accept_terms:
+        # reset the installation status so the splash screen re-appears
+        print("Resetting installation")
+        sql_statement = 'update Application.Setting set Value = false where name ==\"cycleserver.installation.complete\"'
+        _catch_sys_error(
+            [cs_cmd, "execute", sql_statement])
+
+    # If using a random password, we need to reset it on each container restart (since we regenerated it above)
+    # But do is AFTER user is created in CC
+    if not password:
+        cyclecloud_admin_pw = reset_cyclecloud_pw(admin_user)
+
+    initialize_cyclecloud_cli(admin_user, cyclecloud_admin_pw, webserver_port)
+
+
+def create_azure_account(vm_metadata, use_managed_identity, use_workload_identity, tenant_id, application_id,
+                        application_secret, azure_cloud, storageAccount, storage_managed_identity):
+    subscription_id = vm_metadata["compute"]["subscriptionId"]
+    location = vm_metadata["compute"]["location"]
+    resource_group = vm_metadata["compute"]["resourceGroupName"]
+
+    random_suffix = ''.join(random.SystemRandom().choice(
+        ascii_lowercase) for _ in range(14))
+
+    if storageAccount:
+        print('Storage account specified, using it as the default locker')
+        storage_account_name = storageAccount
+    else:
+        storage_account_name = 'cyclecloud{}'.format(random_suffix)
+
+    azure_data = {
+        "Environment": azure_cloud,
+        "AzureRMUseManagedIdentity": use_managed_identity,
+        "AzureRMUseWorkloadIdentity": use_workload_identity,
+        "AzureResourceGroup": resource_group,
+        "AzureRMApplicationId": application_id,
+        "AzureRMApplicationSecret": application_secret,
+        "AzureRMSubscriptionId": subscription_id,
+        "AzureRMTenantId": tenant_id,
+        "DefaultAccount": True,
+        "Location": location,
+        "Name": "azure",
+        "Provider": "azure",
+        "ProviderId": subscription_id,
+        "RMStorageAccount": storage_account_name,
+        "RMStorageContainer": "cyclecloud"
+    }
+    if storage_managed_identity:
+        azure_data["LockerIdentity"] = storage_managed_identity
+        azure_data["LockerAuthMode"] = "ManagedIdentity"
+    else:
+        azure_data["LockerAuthMode"] = "SharedAccessKey"
+
+    print("CycleCloud account data:")
+    print(json.dumps(azure_data))
+
+    azure_data_file = os.path.join(tmpdir, "azure_data.json")
+    with open(azure_data_file, 'w') as fp:
+        json.dump(azure_data, fp)
+
+    # wait until Managed Identity is ready for use before creating the Account
+    if use_managed_identity:
+        get_vm_managed_identity()
+
+    # create the cloud provide account
+    print("Registering Azure subscription in CycleCloud")
+    _catch_sys_error(["/usr/local/bin/cyclecloud", "account",
+                    "create", "-f", azure_data_file])
+
   
 def cyclecloud_account_setup(vm_metadata, use_managed_identity, use_workload_identity, tenant_id, application_id, application_secret,
                              admin_user, azure_cloud, accept_terms, password, storageAccount, no_default_account, 
@@ -129,83 +259,14 @@ def cyclecloud_account_setup(vm_metadata, use_managed_identity, use_workload_ide
         get_workload_identity()
 
     if not entra_enabled:
-        if not accept_terms:
-            print("Accept terms was FALSE !!!!!  Over-riding for now...")
-            accept_terms = True
-
-        cyclecloud_admin_pw = ""
-        if password:
-            print('Password specified, using it as the admin password')
-            cyclecloud_admin_pw = password
-        else:
-            cyclecloud_admin_pw = generate_password_string()
-
-        distribution_method ={
-            "Category": "system",
-            "Status": "internal",
-            "AdType": "Application.Setting",
-            "Description": "CycleCloud distribution method e.g. marketplace, container, manual.",
-            "Value": "container",
-            "Name": "distribution_method"
-        }
-        app_setting_installation = {
-            "AdType": "Application.Setting",
-            "Name": "cycleserver.installation.complete",
-            "Value": True
-        }
-        initial_user = {
-            "AdType": "Application.Setting",
-            "Name": "cycleserver.installation.initial_user",
-            "Value": admin_user
-        }
-        account_data = [
-            initial_user,
-            distribution_method,
-            app_setting_installation
-        ]
-
-        if accept_terms:
-            # Terms accepted, auto-create login user account as well
-            login_user = {
-                "AdType": "AuthenticatedUser",
-                "Name": admin_user,
-                "RawPassword": cyclecloud_admin_pw,
-                "Superuser": True
-            }
-            account_data.append(login_user)
-
-        account_data_file = tmpdir + "/account_data.json"
-
-        with open(account_data_file, 'w') as fp:
-            json.dump(account_data, fp)
-
-        config_path = os.path.join(cycle_root, "config/data/")
-        _catch_sys_error(["chown", "cycle_server:cycle_server", account_data_file])
-        # Don't use copy2 here since ownership matters
-        # copy2(account_data_file, config_path)
-        _catch_sys_error(["mv", account_data_file, config_path])
-        sleep(5)
-
-        if not accept_terms:
-            # reset the installation status so the splash screen re-appears
-            print("Resetting installation")
-            sql_statement = 'update Application.Setting set Value = false where name ==\"cycleserver.installation.complete\"'
-            _catch_sys_error(
-                ["/opt/cycle_server/cycle_server", "execute", sql_statement])
-
-        # If using a random password, we need to reset it on each container restart (since we regenerated it above)
-        # But do is AFTER user is created in CC
-        if not password:
-            cyclecloud_admin_pw = reset_cyclecloud_pw(admin_user)
-
-        initialize_cyclecloud_cli(admin_user, cyclecloud_admin_pw, webserver_port)
+        setup_local_account(admin_user, accept_terms, password, webserver_port)
     else:
-        print("Entra is enabled. Skipping account_data.json creation and password reset.")
+        print("Entra is enabled.")
         if use_workload_identity:
-            print("Entra is enabled. Skipping cyclecloud CLI initialization with username.")
+            print("Using Workload Identity.")
             initialize_cli_with_workload_identity(webserver_port)
         elif use_managed_identity:
-            print("Using Managed Identity. Skipping cyclecloud CLI initialization with username and password.")
+            print("Using Managed Identity.")
             initialize_cli_with_managed_identity(webserver_port, tenant_id, entra_object_id)
         else:
             raise ValueError("Entra is enabled but neither workload identity nor managed identity is configured. "
@@ -218,61 +279,9 @@ def cyclecloud_account_setup(vm_metadata, use_managed_identity, use_workload_ide
         if 'Credentials: azure' in str(output):
             print("Account \"azure\" already exists.   Skipping account setup...")
         else:
-            subscription_id = vm_metadata["compute"]["subscriptionId"]
-            location = vm_metadata["compute"]["location"]
-            resource_group = vm_metadata["compute"]["resourceGroupName"]
-
-            random_suffix = ''.join(random.SystemRandom().choice(
-                ascii_lowercase) for _ in range(14))
-
-            if storageAccount:
-                print('Storage account specified, using it as the default locker')
-                storage_account_name = storageAccount
-            else:
-                storage_account_name = 'cyclecloud{}'.format(random_suffix)
-
-            azure_data = {
-                "Environment": azure_cloud,
-                "AzureRMUseManagedIdentity": use_managed_identity,
-                "AzureRMUseWorkloadIdentity": use_workload_identity,
-                "AzureResourceGroup": resource_group,
-                "AzureRMApplicationId": application_id,
-                "AzureRMApplicationSecret": application_secret,
-                "AzureRMSubscriptionId": subscription_id,
-                "AzureRMTenantId": tenant_id,
-                "DefaultAccount": True,
-                "Location": location,
-                "Name": "azure",
-                "Provider": "azure",
-                "ProviderId": subscription_id,
-                "RMStorageAccount": storage_account_name,
-                "RMStorageContainer": "cyclecloud"
-            }
-            if use_managed_identity:
-                azure_data["AzureRMUseManagedIdentity"] = True
-            if use_workload_identity:
-                azure_data["AzureRMUseWorkloadIdentity"] = True
-            if storage_managed_identity:
-                azure_data["LockerIdentity"] = storage_managed_identity
-                azure_data["LockerAuthMode"] = "ManagedIdentity"
-            else:
-                azure_data["LockerAuthMode"] = "SharedAccessKey"
-
-            azure_data_file = tmpdir + "/azure_data.json"
-            with open(azure_data_file, 'w') as fp:
-                json.dump(azure_data, fp)
-
-            print("CycleCloud account data:")
-            print(json.dumps(azure_data))
-
-            # wait until Managed Identity is ready for use before creating the Account
-            if use_managed_identity:
-                get_vm_managed_identity()
-
-            # create the cloud provide account
-            print("Registering Azure subscription in CycleCloud")
-            _catch_sys_error(["/usr/local/bin/cyclecloud", "account",
-                            "create", "-f", azure_data_file])
+            create_azure_account(vm_metadata, use_managed_identity, use_workload_identity, tenant_id,
+                                application_id, application_secret, azure_cloud, storageAccount,
+                                storage_managed_identity)
 
 
 def initialize_cyclecloud_cli(admin_user, cyclecloud_admin_pw, webserver_port):
@@ -300,96 +309,70 @@ def setup_entra(entra_tenant_id, entra_client_id, entra_object_id, entra_auth_en
     if not all([entra_tenant_id, entra_client_id, entra_object_id, entra_auth_endpoint]):
         raise ValueError("Missing required Entra ID configuration. Please provide entra_tenant_id, entra_client_id, entra_object_id, and entra_auth_endpoint.")
     
-    # Create the Entra auth configuration file
-    # Note: Using tab characters for indentation as required by CycleCloud config parser
-    entra_auth_content = f'''Category = "Authorization"
-AdType = "Application.Setting"
-Description = "The tenant ID to use for Entra ID authentication"
-Label = "Tenant ID"
-Value = "{entra_tenant_id}"
-Name = "authentication.entra.tenantid"
-ParameterType = "String"
+    # Build Entra auth configuration as structured dictionaries
+    entra_tenant_setting = {
+        "Category": "Authorization",
+        "AdType": "Application.Setting",
+        "Description": "The tenant ID to use for Entra ID authentication",
+        "Label": "Tenant ID",
+        "Value": entra_tenant_id,
+        "Name": "authentication.entra.tenantid",
+        "ParameterType": "String"
+    }
+    entra_client_setting = {
+        "Category": "Authorization",
+        "AdType": "Application.Setting",
+        "Description": "The client ID (application ID) to use for Entra ID authentication",
+        "Label": "Client ID",
+        "Value": entra_client_id,
+        "Name": "authentication.entra.clientid",
+        "ParameterType": "String"
+    }
+    entra_endpoint_setting = {
+        "Category": "Authorization",
+        "AdType": "Application.Setting",
+        "Description": "The Entra ID authentication endpoint to use, including the protocol.",
+        "Label": "Endpoint",
+        "Value": entra_auth_endpoint,
+        "Name": "authentication.entra.endpoint",
+        "ParameterType": "String"
+    }
+    entra_enabled_setting = {
+        "Category": "Authorization",
+        "AdType": "Application.Setting",
+        "Description": "If set to true, use Entra ID for authentication",
+        "Value": True,
+        "Name": "authentication.entra.enabled",
+        "ParameterType": "Boolean"
+    }
+    service_account = {
+        "Authentication": "internal",
+        "EntraTID": entra_tenant_id,
+        "UID": entra_uid,
+        "EntraOID": entra_object_id,
+        "Superuser": True,
+        "NodeAccessDisabled": True,
+        "AdType": "AuthenticatedUser",
+        "Roles": ["Administrator", "User", "Cluster Creator"],
+        "NodeUserName": cyclecloud_username,
+        "ServiceAccount": True,
+        "Name": cyclecloud_username,
+        "ForcePasswordReset": False
+    }
 
-Category = "Authorization"
-AdType = "Application.Setting"
-Description = "The client ID (application ID) to use for Entra ID authentication"
-Label = "Client ID"
-Value = "{entra_client_id}"
-Name = "authentication.entra.clientid"
-ParameterType = "String"
+    entra_data = [
+        entra_tenant_setting,
+        entra_client_setting,
+        entra_endpoint_setting,
+        entra_enabled_setting,
+        _installation_complete_record(),
+        _distribution_method_record(),
+        _initial_user_record(cyclecloud_username),
+        service_account
+    ]
 
-Category = "Authorization"
-AdType = "Application.Setting"
-Description = "The Entra ID authentication endpoint to use, including the protocol."
-Label = "Endpoint"
-Value = "{entra_auth_endpoint}"
-Name = "authentication.entra.endpoint"
-ParameterType = "String"
-
-Category = "Authorization"
-AdType = "Application.Setting"
-Description = "If set to true, use Entra ID for authentication"
-Value = true
-Name = "authentication.entra.enabled"
-ParameterType = "Boolean"
-
-AdType = "Application.Setting"
-Name = "cycleserver.installation.complete"
-Value = true
-
-Category = "system"
-Status = "internal"
-AdType = "Application.Setting"
-Description = "CycleCloud distribution method e.g. marketplace, container, manual."
-Value = "container"
-Name = "distribution_method"
-
-AdType = "Application.Setting"
-Name = "cycleserver.installation.initial_user"
-Value = "{cyclecloud_username}"
-
-Authentication = "internal"
-EntraTID = "{entra_tenant_id}"
-UID = {entra_uid}
-EntraOID = "{entra_object_id}"
-Superuser = true
-NodeAccessDisabled = true
-AdType = "AuthenticatedUser"
-Roles = {{"Administrator","User","Cluster Creator"}}
-NodeUserName = "{cyclecloud_username}"
-ServiceAccount = true
-Name = "{cyclecloud_username}"
-ForcePasswordReset = false
-'''
-    
-    # Write to temp file first
-    entra_auth_tmp = os.path.join(tmpdir, "entra_auth.txt")
-    with open(entra_auth_tmp, 'w') as f:
-        f.write(entra_auth_content)
-    
-    # Set ownership and permissions
-    _catch_sys_error(["chown", "cycle_server:cycle_server", entra_auth_tmp])
-    _catch_sys_error(["chmod", "664", entra_auth_tmp])
-    
-    # Move to CycleCloud config data directory
-    config_data_path = os.path.join(cycle_root, "config/data/entra_auth.txt")
-    _catch_sys_error(["mv", entra_auth_tmp, config_data_path])
-    
-    # Wait for Entra records to be imported (CycleCloud auto-imports .txt files from config/data)
-    print("Waiting for Entra records to be imported")
-    timeout_seconds = 360
-    elapsed = 0
-    while elapsed < timeout_seconds:
-        txt_files = glob.glob(os.path.join(cycle_root, "config/data/*.txt"))
-        if not txt_files:
-            break
-        sleep(10)
-        elapsed += 10
-    
-    if elapsed >= timeout_seconds:
-        print("Warning: Timeout waiting for Entra records to be imported")
-    else:
-        print("Entra ID authentication records imported")
+    _write_config_data(entra_data, "entra_auth.json")
+    sleep(5)
 
     # Debug: verify the service account was created
     debug_check_service_account(cyclecloud_username)
@@ -491,23 +474,16 @@ def get_vm_managed_identity():
 
 
 def get_workload_identity():
-    # Managed Identity may  not be available immediately at VM startup...
-    # Test/Pause/Retry to see if it gets assigned
-    try:
-        # convert to strinng
-        azure_authority_host = os.environ["AZURE_AUTHORITY_HOST"]
-        azure_tenant_id = os.environ['AZURE_TENANT_ID']
-        azure_client_id = os.environ['AZURE_CLIENT_ID']
-        azure_federated_token_file = os.environ.get('AZURE_FEDERATED_TOKEN_FILE')
-        print("Workload Identity exists")
-    except KeyError:
-        print("AZURE_AUTHORITY_HOST, AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_FEDERATED_TOKEN_FILE environment variables must be set to use workload identity")
-        raise      
+    # Validate that required workload identity environment variables are set
+    required_vars = ["AZURE_AUTHORITY_HOST", "AZURE_TENANT_ID", "AZURE_CLIENT_ID"]
+    missing = [v for v in required_vars if v not in os.environ]
+    if missing:
+        print("Missing environment variables for workload identity: {}".format(", ".join(missing)))
+        raise KeyError("Required workload identity env vars not set: {}".format(missing))
+    print("Workload Identity exists")
 
 
 def start_cc():
-    import glob
-    import subprocess
     print("(Re-)Starting CycleCloud server")
     _catch_sys_error([cs_cmd, "stop"])
     if glob.glob("/opt/cycle_server/data/ads/corrupt*") or glob.glob("/opt/cycle_server/data/ads/*logfile_failure"):
