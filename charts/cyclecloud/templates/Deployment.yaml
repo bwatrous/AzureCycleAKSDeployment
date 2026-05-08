@@ -74,6 +74,20 @@ spec:
         {{- end }}
         - name: GENERATE_CS_CONFIG
           value: "{{ .Values.cycle.generate_cs_config}}"
+        - name: ENTRA_ENABLED
+          value: "{{ .Values.cycle.entraEnabled}}"
+        - name: ENTRA_TENANT_ID
+          value: "{{ .Values.cycle.entraTenantId}}"
+        - name: ENTRA_CLIENT_ID
+          value: "{{ .Values.cycle.entraClientId}}"
+        - name: ENTRA_OBJECT_ID
+          value: "{{ .Values.cycle.entraObjectId}}"
+        - name: ENTRA_AUTH_ENDPOINT
+          value: "{{ .Values.cycle.entraAuthEndpoint}}"
+        - name: ENTRA_USERNAME
+          value: "{{ .Values.cycle.entraUsername}}"
+        - name: ENTRA_UID
+          value: "{{ .Values.cycle.entraUID}}"
         image: "{{ .Values.cycle.containerImage }}"
         resources:
           requests:
@@ -91,20 +105,36 @@ spec:
         - containerPort: 8443
 
         livenessProbe:
-          httpGet:
-            path: /health_monitor
-            port: 8443
-            scheme: HTTPS
+          # Temporary commenting until bug in CC is fixed for negative serial number in self-signed cert. 
+          # httpGet:
+          #   path: /health_monitor
+          #   port: 8443
+          #   scheme: HTTPS
+          exec:
+            command:
+            - curl
+            - -k
+            - -f
+            - -s
+            - https://localhost:8443/health_monitor
           failureThreshold: 15
           timeoutSeconds: 60
           periodSeconds: 60
           initialDelaySeconds: 400
 
         readinessProbe:
-          httpGet:
-            path: /health_monitor
-            port: 8443
-            scheme: HTTPS
+          # Temporary commenting until bug in CC is fixed for negative serial number in self-signed cert. 
+          # httpGet:
+          #   path: /health_monitor
+          #   port: 8443
+          #   scheme: HTTPS
+          exec:
+            command:
+            - curl
+            - -k
+            - -f
+            - -s
+            - https://localhost:8443/health_monitor
           failureThreshold: 30
           initialDelaySeconds: 60
           periodSeconds: 10
