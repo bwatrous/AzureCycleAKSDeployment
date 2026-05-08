@@ -60,8 +60,7 @@ def _write_config_data(data, filename):
     with open(data_file, 'w') as fp:
         json.dump(data, fp)
     _catch_sys_error(["chown", "cycle_server:cycle_server", data_file])
-    config_path = os.path.join(cycle_root, "config/data/")
-    _catch_sys_error(["mv", data_file, config_path])
+    _catch_sys_error(["/opt/cycle_server/cycle_server", "import_data","-f", data_file])
 
 
 def _catch_sys_error(cmd_list):
@@ -442,8 +441,8 @@ def initialize_cli_with_managed_identity(webserver_port, tenant_id, entra_object
     _catch_sys_error([
         "/usr/local/bin/cyclecloud", "initialize",
         "--identity",
-        "--tenant-id={}".format(tenant_id),
-        "--object-id={}".format(entra_object_id),
+        "--tenant_id={}".format(tenant_id),
+        "--object_id={}".format(entra_object_id),
         "--verify-ssl=false",
         "--url=https://localhost:{}".format(webserver_port),
         "--batch",
