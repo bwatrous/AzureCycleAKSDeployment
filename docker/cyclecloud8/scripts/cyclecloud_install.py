@@ -147,11 +147,7 @@ def reset_cyclecloud_pw(username):
     return pw 
 
 
-def setup_local_account(admin_user, accept_terms, password, webserver_port):
-    if not accept_terms:
-        print("Accept terms was FALSE !!!!!  Over-riding for now...")
-        accept_terms = True
-
+def setup_local_account(admin_user, password, webserver_port):
     cyclecloud_admin_pw = ""
     if password:
         print('Password specified, using it as the admin password')
@@ -165,25 +161,17 @@ def setup_local_account(admin_user, accept_terms, password, webserver_port):
         _installation_complete_record()
     ]
 
-    if accept_terms:
-        # Terms accepted, auto-create login user account as well
-        login_user = {
-            "AdType": "AuthenticatedUser",
-            "Name": admin_user,
-            "RawPassword": cyclecloud_admin_pw,
-            "Superuser": True
-        }
-        account_data.append(login_user)
+    # Terms are accepted by default, auto-create login user account as well
+    login_user = {
+        "AdType": "AuthenticatedUser",
+        "Name": admin_user,
+        "RawPassword": cyclecloud_admin_pw,
+        "Superuser": True
+    }
+    account_data.append(login_user)
 
     _write_config_data(account_data, "account_data.json")
     sleep(5)
-
-    if not accept_terms:
-        # reset the installation status so the splash screen re-appears
-        print("Resetting installation")
-        sql_statement = 'update Application.Setting set Value = false where name ==\"cycleserver.installation.complete\"'
-        _catch_sys_error(
-            [cs_cmd, "execute", sql_statement])
 
     # If using a random password, we need to reset it on each container restart (since we regenerated it above)
     # But do is AFTER user is created in CC
@@ -249,7 +237,7 @@ def create_azure_account(vm_metadata, use_managed_identity, use_workload_identit
 
   
 def cyclecloud_account_setup(vm_metadata, use_managed_identity, use_workload_identity, tenant_id, application_id, application_secret,
-                             admin_user, azure_cloud, accept_terms, password, storageAccount, no_default_account, 
+                             admin_user, azure_cloud, password, storageAccount, no_default_account, 
                              webserver_port, storage_managed_identity, entra_enabled=False, entra_object_id=None):
 
     print("Setting up azure account in CycleCloud and initializing cyclecloud CLI")
@@ -258,7 +246,7 @@ def cyclecloud_account_setup(vm_metadata, use_managed_identity, use_workload_ide
         get_workload_identity()
 
     if not entra_enabled:
-        setup_local_account(admin_user, accept_terms, password, webserver_port)
+        setup_local_account(admin_user, password, webserver_port)
     else:
         print("Entra is enabled.")
         if use_workload_identity:
@@ -693,11 +681,6 @@ def main():
                         dest="hostname",
                         help="The short public hostname assigned to this VM (or public IP), used for LetsEncrypt")
 
-    parser.add_argument("--acceptTerms",
-                        dest="acceptTerms",
-                        action="store_true",
-                        help="Accept Cyclecloud terms and do a silent install")
-
     parser.add_argument("--useLetsEncrypt",
                         dest="useLetsEncrypt",
                         action="store_true",
@@ -846,7 +829,7 @@ def main():
        
     cyclecloud_account_setup(vm_metadata, args.useManagedIdentity, args.useWorkloadIdentity, args.tenantId, args.applicationId,
                              args.applicationSecret, args.username, args.azureSovereignCloud,
-                             args.acceptTerms, args.password, args.storageAccount, 
+                             args.password, args.storageAccount, 
                              args.no_default_account, args.webServerSslPort, args.storageManagedIdentity,
                              args.entraEnabled, args.entraObjectId)
 
