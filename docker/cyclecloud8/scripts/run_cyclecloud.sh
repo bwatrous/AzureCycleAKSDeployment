@@ -102,7 +102,7 @@ else
     ENTRA_ENABLED=""
 fi
 
-python3 /cs-install/scripts/cyclecloud_install.py --acceptTerms \
+python3 /cs-install/scripts/cyclecloud_install.py \
     ${IDENTITY_TYPE} --username=${CYCLECLOUD_USERNAME} --password="${CYCLECLOUD_PASSWORD}" \
     --publickey="${CYCLECLOUD_USER_PUBKEY}" \
     --storageAccount=${CYCLECLOUD_STORAGE} \
