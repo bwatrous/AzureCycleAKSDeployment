@@ -1,158 +1,155 @@
 # AzureCycleAKSDeployment
 
-Deploy Azure CycleCloud in a new [Azure Kubernetes](https://docs.microsoft.com/en-us/azure/aks/) cluster using the [AzureRM Terraform Provider](https://www.terraform.io/docs/providers/azurerm/r/kubernetes_cluster.html) and storing the container images in an [Azure Container Registry](https://docs.microsoft.com/en-us/azure/container-registry/).
+Deploy Azure CycleCloud into an [Azure Kubernetes Service (AKS)](https://docs.microsoft.com/en-us/azure/aks/) cluster. The cluster is provisioned with the [AzureRM Terraform Provider](https://www.terraform.io/docs/providers/azurerm/r/kubernetes_cluster.html), the container image is stored in an [Azure Container Registry (ACR)](https://docs.microsoft.com/en-us/azure/container-registry/), and CycleCloud itself is installed with the Helm chart under [`charts/cyclecloud`](charts/cyclecloud).
 
+Throughout this README we use the example ACR registry name `cccontainerreguswest2` and the `westus2` region. Replace these with your own values.
 
-For this  README, we'll use  the name 'cccontainerreguswest2' for the ACR registry and use the "West US 2" region in Azure.
+## Repository layout
+
+| Path | Purpose |
+|------|---------|
+| [`docker/cyclecloud8`](docker/cyclecloud8) | Dockerfile and startup scripts for the CycleCloud 8 container image |
+| [`terraform-aks-azure-cni`](terraform-aks-azure-cni) | Terraform to provision the AKS cluster (Azure CNI) and supporting identities |
+| [`charts/cyclecloud`](charts/cyclecloud) | Helm chart used to deploy the CycleCloud pod |
 
 ## Pre-Requisites
 
-* Install the Azure CLI
-* Install Docker and Terraform
-* Prepare a new [Azure Container Registry](https://docs.microsoft.com/en-us/azure/container-registry/) to store the CycleCloud container images.
+* [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
+* [Docker](https://docs.docker.com/get-docker/)
+* [Terraform](https://developer.hashicorp.com/terraform/install)
+* [kubectl](https://kubernetes.io/docs/tasks/tools/)
+* [Helm](https://helm.sh/docs/intro/install/)
+* An existing VNet/subnet and an [Azure Container Registry](https://docs.microsoft.com/en-us/azure/container-registry/) for the CycleCloud container image. The Terraform module attaches to an existing network and ACR (see [Deploy the AKS cluster](#deploy-the-aks-cluster)).
 
+## Build and push the CycleCloud container image
 
-## Build and push the Azure Cyclecloud Container Image
+Log in to the Azure CLI:
 
-Log in to the Azure CLI
-``` bash
+```bash
 az login
 ```
 
-Create the Container Registry
-``` bash
+Create the Container Registry (skip if you already have one):
+
+```bash
 az group create --name cccontainerreg-rg --location westus2
 az acr create --resource-group cccontainerreg-rg --name cccontainerreguswest2 --sku Premium
 ```
 
-### CycleCloud 8.x
-Next, build and deploy the CycleCloud 8 container to ACR as follows:
-``` bash
+Build and push the CycleCloud 8 image. The [`docker/cyclecloud8`](docker/cyclecloud8) directory contains multiple Dockerfile variants (a default and `Dockerfile.ubuntu*`); choose the one that matches your intended base OS. The example below builds the default Dockerfile:
+
+```bash
 cd docker/cyclecloud8
 az acr login -n cccontainerreguswest2
 docker build -t cccontainerreguswest2.azurecr.io/cyclecloud8:latest .
 docker push cccontainerreguswest2.azurecr.io/cyclecloud8:latest
 ```
 
-
-### CycleCloud 7.x
-If you require CycleCloud 7.9.x, you can build and deploy a 7.9 container to ACR as follows:
-``` bash
-cd docker/cyclecloud7
-az acr login -n cccontainerreguswest2
-docker build -t cccontainerreguswest2.azurecr.io/cyclecloud7:latest .
-docker push cccontainerreguswest2.azurecr.io/cyclecloud7:latest
-```
-
+> [!NOTE]
+> To build a specific variant, pass `-f`, e.g. `docker build -f Dockerfile.ubuntu -t cccontainerreguswest2.azurecr.io/cyclecloud8:latest .`
 
 ## Deploy the AKS cluster
 
-Next, deploy the AKS cluster using Terraform.  (Alternatively, you may create the AKS cluster manually via the Portal  or Azure CLI.)
+Provision the AKS cluster with Terraform. The module in [`terraform-aks-azure-cni`](terraform-aks-azure-cni) expects an **existing** VNet, subnet, and ACR, and creates the cluster in a new resource group named `<prefix>-rg` (default prefix `cc-aks-tf`).
 
-Ensure that the cluster is deployed to the same  region as the ACR registry when prompted.
+Set the required variables (via a `terraform.tfvars` file, `-var` flags, or `TF_VAR_*` environment variables). The key inputs from [`variables.tf`](terraform-aks-azure-cni/variables.tf) are:
+
+| Variable | Description |
+|----------|-------------|
+| `prefix` | Prefix for all created resources (default `cc-aks-tf`) |
+| `location` | Azure region (use the same region as the ACR) |
+| `network_rg` | Resource group of the existing VNet |
+| `vnet_name` | Existing VNet name |
+| `subnet_name` | Existing subnet name |
+| `acr_id` | Resource ID of the existing ACR |
+| `ssh_key` | SSH public key for the AKS nodes |
+| `kubernetes_version` | Kubernetes version for the cluster (verify it is still supported in your region) |
+| `machine_type` | VM size for the default node pool (default `Standard_D4s_v3`) |
+
+Then apply:
 
 ```bash
-cd terraform
+cd terraform-aks-azure-cni
+terraform init
 terraform apply
-
 ```
 
-## Assign the Roles to the Cluster's Managed Identity
+> [!NOTE]
+> The Terraform module runs several `local-exec` provisioners on `terraform apply` that automate cluster setup: it fetches kubeconfig credentials (`az aks get-credentials`), assigns the kubelet identity the **Virtual Machine Contributor** and **Managed Identity Operator** roles, attaches the ACR (`az aks update --attach-acr`), and creates a user-assigned identity (`<prefix>-ui`) with **Contributor** on the subscription. As a result, most of the manual role-assignment and credential steps from older versions of this guide are no longer required. Review [`main.tf`](terraform-aks-azure-cni/main.tf) to confirm the behavior for your environment.
 
-Once the AKS cluster is deployed, the System Assigned Managed Identity for the AKS cluster and the User Assigned Managed Identity for the CycleCloud Pod must be permissioned.
+If you prefer to create the cluster manually (Portal or Azure CLI), ensure it is deployed to the same region as the ACR and that the cluster and node identities are permissioned equivalently.
+
+## Deploy CycleCloud with Helm
+
+CycleCloud is deployed via the Helm chart in [`charts/cyclecloud`](charts/cyclecloud). Configure the deployment by editing [`values.yaml`](charts/cyclecloud/values.yaml) or by passing `--set`/`-f` overrides.
+
+Get the AKS credentials (the Terraform provisioner does this automatically, but you can refresh them):
+
+```bash
+az aks get-credentials --resource-group cc-aks-tf-rg --name cc-aks-tf-cluster
+```
+
+Install or upgrade the release:
+
+```bash
+cd charts
+helm upgrade --install cyclecloud ./cyclecloud \
+  --namespace cyclecloud --create-namespace \
+  -f cyclecloud/values.yaml
+```
+
+### Key `values.yaml` parameters
+
+The most commonly edited values under `cycle:` and related keys:
+
+| Parameter | Description |
+|-----------|-------------|
+| `cycle.username` / `cycle.password` | Initial CycleCloud admin credentials |
+| `cycle.containerImage` | Full image reference, e.g. `cccontainerreguswest2.azurecr.io/cyclecloud8:latest` |
+| `cycle.resourceGroup` | Resource group where CycleCloud provisions compute resources |
+| `cycle.storage` | Storage account used for the initial account when `configureDefaultAccount` is true |
+| `cycle.configureDefaultAccount` | Create a default Azure account on first boot |
+| `cycle.userPubKey` | SSH public key registered with the CycleCloud user |
+| `cycle.dataDiskSize` / `cycle.backupsDiskSize` | Persistent volume sizes |
+| `cycle.webServerMaxHeapSize` | JVM heap for the CycleCloud web server |
+| `cycle.generate_cs_config` | When `true`, the container generates `cycle_server.properties`; set `false` to supply it via ConfigMap |
+| `azureIdentity.resourceID` / `azureIdentity.clientID` | User-assigned managed identity used for orchestration (the `<prefix>-ui` identity created by Terraform) |
+| `cycle.useWorkloadIdentity` | Use [Azure AD Workload Identity](https://azure.github.io/azure-workload-identity/) instead of `azureIdentity`. When `true`, `azureIdentity` is not required |
+| `cycle.storage_managed_identity` | Resource ID of the managed identity used for storage. Requires **Storage Blob Data Reader** on the storage account |
+| `service.type` / `service.port` | Kubernetes Service type and port (defaults to a `LoadBalancer` on `443`) |
 
 > [!IMPORTANT]
-> These instructions are based on the [AAD Pod Identity](https://github.com/Azure/aad-pod-identity) readme and may be out of date.  Refer to source for the most up-to-date instructions.
+> If you use a managed identity for storage, the CycleCloud identity (Workload Identity or managed identity) also needs the **Storage Blob Data Contributor** role on the storage account.
 
-First, permission the AKS Cluster's system-assigned identity following the instructions in [AAD Pod Identity Pre-requisites](https://github.com/Azure/aad-pod-identity/blob/master/docs/readmes/README.msi.md#pre-requisites---role-assignments) documentation.
-```bash
-SUBSCRIPTION_ID=$( az account show --query id -o tsv )
-AGENT_POOL_CLIENT_ID=$( az aks show -g cc-aks-tf-rg -n cc-aks-tf-cluster --query identityProfile.kubeletidentity.clientId -o tsv )
+### Identity options
 
-az role assignment create --role "Virtual Machine Contributor" --assignee ${AGENT_POOL_CLIENT_ID} --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/cc-aks-tf-nodes-rg
-az role assignment create --role "Managed Identity Operator" --assignee ${AGENT_POOL_CLIENT_ID}  --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/cc-aks-tf-nodes-rg
-az role assignment create --role "Managed Identity Operator" --assignee ${AGENT_POOL_CLIENT_ID}  --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/cc-aks-tf-nodes-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cc-aks-tf-cluster-agentpool
-az role assignment create --role "Managed Identity Operator" --assignee ${AGENT_POOL_CLIENT_ID}  --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/cc-aks-tf-nodes-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cc-aks-tf-ui
+This chart supports two identity models for CycleCloud's Azure orchestration:
 
-```
+* **User-assigned managed identity** — set `azureIdentity.resourceID` and `azureIdentity.clientID` to the `<prefix>-ui` identity created by Terraform.
+* **Workload Identity (recommended)** — set `cycle.useWorkloadIdentity: true` and configure the associated federated credential / service account. With Workload Identity enabled, `azureIdentity` is not required.
 
+> [!NOTE]
+> Earlier versions of this guide used the now-archived [AAD Pod Identity](https://github.com/Azure/aad-pod-identity) project. New deployments should prefer Workload Identity. Note that the Terraform module still applies AAD Pod Identity RBAC manifests; remove or update those provisioners if you standardize on Workload Identity.
 
-## Launch the CycleCloud AKS Pod
+### Microsoft Entra ID authentication (optional)
 
-Get the AKS Credentials for the new cluster
-```bash
-az aks get-credentials --resource-group cc-aks-tf-rg  --name cc-aks-tf
-```
+The chart can configure CycleCloud to authenticate against Microsoft Entra ID. Set `cycle.entraEnabled: true` and provide the related values:
 
-After the terraform cluster is up, we still need to enable [AAD Pod Identity](https://github.com/Azure/aad-pod-identity):
-```bash
-kubectl apply -f https://raw.githubusercontent.com/Azure/aad-pod-identity/master/deploy/infra/deployment-rbac.yaml
-```
+| Parameter | Description |
+|-----------|-------------|
+| `cycle.entraTenantId` | Entra tenant ID |
+| `cycle.entraClientId` | Application (client) ID |
+| `cycle.entraObjectId` | Object ID of the service principal or managed identity |
+| `cycle.entraAuthEndpoint` | Entra authentication endpoint |
+| `cycle.entraUsername` | Entra username to map |
+| `cycle.entraUID` | UID assigned to the Entra user (default `19000`) |
 
-Next, attach the ACR registry to the cluster to allow it to pull the container image:
-```bash
-az aks update --attach-acr cccontainerreguswest2 --resource-group cc-aks-tf-rg  --name cc-aks-tf
-```
-
-Now permission the CycleCloud User-Assigned Managed Identity:
-```bash
-SUBSCRIPTION_ID=$( az account show --query id -o tsv )
-CLIENT_ID=$( az identity show --resource-group cc-aks-tf-nodes-rg --name cc-aks-tf-ui --query clientId -o tsv )
-
-az role assignment create --assignee ${CLIENT_ID} --role=Contributor --scope=/subscriptions/${SUBSCRIPTION_ID}
-```
-
-Optionally, create a new Resource Group to hold the compute cluster resources (if you do not already have a target Resource Group).
-This should generally be a different Resource Group from the AKS nodes Resource Group.
-```bash
-az group create -l westus2 -n cccomputerguswest2
-```
-
-Finally, we're ready to deploy the CycleCloud Pod.   By default, this deployment will have a public IP.  To disable, the public IP, uncomment the "annotations" in the Service definition in `cyclecloud.yaml`.
-
-> [!IMPORTANT]
-> Update the cyclecloud YAML File with the new Managed Identity ID Resource ID and Client ID, and other variables.  The Client ID will change for each terraform cluster deployment even if the rest of the variables are constant.
+## Uninstall
 
 ```bash
-SUBSCRIPTION_ID=$( az account show --query id -o tsv )
-CLIENT_ID=$( az identity show --resource-group cc-aks-tf-nodes-rg --name cc-aks-tf-ui --query clientId -o tsv )
-CYCLECLOUD_USERNAME="your_username"
-CYCLECLOUD_PASSWORD="your_password"
-CYCLECLOUD_STORAGE="ccstorageuswest2"
-CYCLECLOUD_USER_PUBKEY="your SSH pub key here"
-# Use the cyclecloud7:latest tag for a CycleCloud 7.9.x container instead of CycleCloud 8
-CYCLECLOUD_CONTAINER_IMAGE="cccontainerreguswest2.azurecr.io/cyclecloud8:latest"
-CYCLECLOUD_RESOURCE_GROUP="cccomputerguswest2"
-
-# Feel free to skip the sed commands and simply  edit the yaml file
-sed -i.bak "s|%SUBSCRIPTION_ID%|${SUBSCRIPTION_ID}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CLIENT_ID%|${CLIENT_ID}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_USERNAME%|${CYCLECLOUD_USERNAME}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_PASSWORD%|${CYCLECLOUD_PASSWORD}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_STORAGE%|${CYCLECLOUD_STORAGE}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_USER_PUBKEY%|${CYCLECLOUD_USER_PUBKEY}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_CONTAINER_IMAGE%|${CYCLECLOUD_CONTAINER_IMAGE}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_RESOURCE_GROUP%|${CYCLECLOUD_RESOURCE_GROUP}|g" ./cyclecloud.yaml
-
-kubectl apply -f cyclecloud.yaml
+helm uninstall cyclecloud --namespace cyclecloud
+cd terraform-aks-azure-cni && terraform destroy
 ```
-
-## Description of values.yaml parameters for helm chart
-
-azureIdentity: This parameter is only required when using managed identity for cyclecloud orchestration. It basically stores the resource id of managed identity and client id which would be used in Deployment.yaml file in case of using pod identity.
-
-Parameters under Values.cycle are cyclecloud related parameters.Most of them are self-explantory, details of few:
-
-configureDefaultAccount: If you want to create an azure account by default then it will be created if set to true.
-
-storage: Specifies the storage account to use in case of intial account creation.
-
-useWorkloadIdentity: If you are using workload identity then this needs to be set to true and azureIdentity is not required in this case.
-
-storage_managed_identity: When using managed identity for storage account you need to set this to true. Also you need to assign Storage Blob Reader role to this identity for storage account. 
-Note: If you are using managed identity for storage you also need to assign Storage Blob Data Contributor role to the Cyclecloud identity (Workload Identity or Managed Identity)
-
-generate_cs_config: By default the container script will generate cycle_server.properties file but if you want to use ConfigMap for cycle_server.properties then you can disable this option to skip generation of file. 
 
 
 
