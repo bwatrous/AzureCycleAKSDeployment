@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/mirror/docker/library/ubuntu:22.04
+FROM mcr.microsoft.com/mirror/docker/library/almalinux:9
 
 WORKDIR /cs-install
 ENV CS_UID=1169
@@ -31,7 +31,7 @@ RUN yum update -y \
     && tar xzf /tmp/azcopy_linux.tar.gz -C /tmp/ \
     && mv /tmp/azcopy_linux*/azcopy /usr/local/bin/azcopy \
     && rm -rf /tmp/azcopy_linux* \
-    && alternatives --set python /usr/bin/python3
+    && alternatives --install /usr/bin/python python /usr/bin/python3 1
 
 RUN groupadd -g ${CS_GID} cycle_server \
     && useradd -u ${CS_UID} -g ${CS_GID} -m -d /opt/cycle_server cycle_server \
