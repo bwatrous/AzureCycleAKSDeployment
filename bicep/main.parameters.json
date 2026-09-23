@@ -1,0 +1,93 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "prefix": {
+      "value": "cyclecloud"
+    },
+    "location": {
+      "value": "westus2"
+    },
+    "virtualNetworkSubscriptionId": {
+      "value": "<vnet-subscription-id>"
+    },
+    "virtualNetworkResourceGroupName": {
+      "value": "<vnet-resource-group>"
+    },
+    "virtualNetworkName": {
+      "value": "<vnet-name>"
+    },
+    "systemNodeSubnetName": {
+      "value": "SystemSubnet"
+    },
+    "systemNodeSubnetAddressPrefix": {
+      "value": "10.10.0.0/24"
+    },
+    "apiServerVnetIntegrationEnabled": {
+      "value": false
+    },
+    "networkPlugin": {
+      "value": "azure"
+    },
+    "networkPluginMode": {
+      "value": ""
+    },
+    "serviceCidr": {
+      "value": "172.16.0.0/16"
+    },
+    "dnsServiceIP": {
+      "value": "172.16.0.10"
+    },
+    "podCidr": {
+      "value": ""
+    },
+    "systemNodeVmSize": {
+      "value": "Standard_D4ds_v5"
+    },
+    "systemNodeCount": {
+      "value": 1
+    },
+    "privateClusterEnabled": {
+      "value": false
+    },
+    "workloadIdentityEnabled": {
+      "value": true
+    },
+    "workloadIdentityNamespace": {
+      "value": "default"
+    },
+    "workloadIdentityServiceAccountName": {
+      "value": "cyclecloud-sa"
+    },
+    "workloadResourceGroupSubscriptionId": {
+      "value": "<workload-resource-group-subscription-id>"
+    },
+    "workloadResourceGroupName": {
+      "value": "<workload-resource-group-name>"
+    },
+    "storageAccountSubscriptionId": {
+      "value": "<storage-account-subscription-id>"
+    },
+    "storageAccountResourceGroupName": {
+      "value": "<storage-account-resource-group>"
+    },
+    "storageAccountName": {
+      "value": "<storage-account-name>"
+    },
+    "containerRegistrySubscriptionId": {
+      "value": "<acr-subscription-id>"
+    },
+    "containerRegistryResourceGroupName": {
+      "value": "<acr-resource-group>"
+    },
+    "containerRegistryName": {
+      "value": "<acr-name>"
+    },
+    "tags": {
+      "value": {
+        "workload": "cyclecloud",
+        "managedBy": "bicep"
+      }
+    }
+  }
+}

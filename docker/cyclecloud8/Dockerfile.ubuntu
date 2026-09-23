@@ -60,6 +60,8 @@ RUN echo "Stashing a copy of the cycle_server data directory..." \
     && mkdir -p /opt_cycle_server/  \
     && cp -a /opt/cycle_server/data /opt_cycle_server/  \
     && cp -a /opt/cycle_server/work /opt_cycle_server/  \
+    && cp -a /opt/cycle_server/system /opt_cycle_server/ \
+    && cp -a /opt/cycle_server/config /opt_cycle_server/ \
     && chown -R cycle_server:cycle_server /opt_cycle_server  \
     && ls -ltra  /opt_cycle_server/data/ads/
 
