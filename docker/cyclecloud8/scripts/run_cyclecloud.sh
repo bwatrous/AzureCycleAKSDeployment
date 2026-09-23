@@ -4,16 +4,45 @@ set -e
 
 CS_ROOT="/opt/cycle_server"
 
+STASH_ROOT="/opt_cycle_server"
+
+if [ ! -f "${STASH_ROOT}/system/version" ]; then
+    echo "Missing stashed CycleCloud system version: ${STASH_ROOT}/system/version" >&2
+    exit 1
+fi
+
+STASHED_SYSTEM_MD5=$(md5sum "${STASH_ROOT}/system/version" | awk '{print $1}')
+CURRENT_SYSTEM_MD5=""
+if [ -f "${CS_ROOT}/system/version" ]; then
+    CURRENT_SYSTEM_MD5=$(md5sum "${CS_ROOT}/system/version" | awk '{print $1}')
+fi
+
+if [ "${STASHED_SYSTEM_MD5}" != "${CURRENT_SYSTEM_MD5}" ]; then
+    echo "Synchronizing CycleCloud system files from the container image..."
+    find "${CS_ROOT}/system" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    cp -R "${STASH_ROOT}/system/." "${CS_ROOT}/system/"
+fi
+
+if [ ! -d "${STASH_ROOT}/config" ]; then
+    echo "Missing stashed CycleCloud config directory: ${STASH_ROOT}/config" >&2
+    exit 1
+fi
+
+if [ -z "$(find "${CS_ROOT}/config" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    echo "Initializing empty CycleCloud config directory from the container image..."
+    cp -R "${STASH_ROOT}/config/." "${CS_ROOT}/config/"
+fi
+
 
 # If CycleCloud data dir is empty (new persistent volume mount) or corrupt
 # then copy stashed data dir into place
-# (Move files within the ads/ directory rather than director itself to allow mounting at ads/)
+# (Copy files within the ads/ directory rather than directory itself to allow mounting at ads/)
 if [ ! -f "${CS_ROOT}/data/ads/master.logfile" ]; then
-   echo "Moving stashed cyclecloud data from container to mounted data disk on first start..."
+    echo "Copying stashed cyclecloud data from container to mounted data disk on first start..."
    pushd ${CS_ROOT}/data
    rm -rf ./ads
    mkdir -p ./ads
-   mv /opt_cycle_server/data/ads/* ./ads/
+    cp -a /opt_cycle_server/data/ads/. ./ads/
    popd
 fi
 
@@ -22,6 +51,10 @@ fi
 pushd ${CS_ROOT}
 cp -a /opt_cycle_server/work/* ./work/ 
 popd
+
+CLI_HOME="${CS_ROOT}/work/cli-home"
+mkdir -p "${CLI_HOME}"
+export HOME="${CLI_HOME}"
 
 
 if [ -f "$CS_ROOT/logs/catalina.err" ]; then

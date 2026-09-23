@@ -129,24 +129,6 @@ def generate_password_string():
     random.shuffle(random_pw_chars)
     return ''.join(random_pw_chars)
 
-def reset_cyclecloud_pw(username):
-
-    reset_pw = subprocess.Popen( [cs_cmd, "reset_access", username],
-                                stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, )
-    reset_out, reset_err = reset_pw.communicate( b"yes\n" )
-    print(reset_out)
-    if reset_err:
-        print("Password reset error: %s" % (reset_err))
-    out_split = reset_out.rsplit(None, 1)
-    pw = out_split.pop().decode("utf-8")
-    print("Disabling forced password reseet for {}".format(username))
-    update_cmd = 'update AuthenticatedUser set ForcePasswordReset = false where Name=="%s"' % (username)
-    _catch_sys_error([cs_cmd, 'execute', update_cmd])
-    return pw 
-
-
 def setup_local_account(admin_user, password, webserver_port):
     cyclecloud_admin_pw = ""
     if password:
@@ -172,11 +154,6 @@ def setup_local_account(admin_user, password, webserver_port):
 
     _write_config_data(account_data, "account_data.json")
     sleep(5)
-
-    # If using a random password, we need to reset it on each container restart (since we regenerated it above)
-    # But do is AFTER user is created in CC
-    if not password:
-        cyclecloud_admin_pw = reset_cyclecloud_pw(admin_user)
 
     initialize_cyclecloud_cli(admin_user, cyclecloud_admin_pw, webserver_port)
 

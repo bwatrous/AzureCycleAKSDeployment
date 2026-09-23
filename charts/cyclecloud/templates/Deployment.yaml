@@ -96,7 +96,7 @@ spec:
           limits:
             memory: "{{ .Values.resources.limits.memory }}"
             cpu: "{{ .Values.resources.limits.cpu }}"
-        command: ["/bin/bash"]
+        command: ["/bin/bash", "-c"]
         securityContext:
           {{- toYaml .Values.securityContext.containerSecurityContext | nindent 10 }}
         args: ["-c", "chmod +x scripts/run_cyclecloud.sh && ./scripts/run_cyclecloud.sh"]
@@ -152,10 +152,16 @@ spec:
         - mountPath: "/opt/cycle_server/work"
           name: cyclecloud-data-volume
           subPath: work
+        - mountPath: "/opt/cycle_server/config"
+          name: cyclecloud-data-volume
+          subPath: config
+        - mountPath: "/opt/cycle_server/system"
+          name: cyclecloud-data-volume
+          subPath: system
         - mountPath: /cs-install/prometheus_exporter_config.yaml
           name: prometheus-config-volume
-
-
+        - mountPath: /tmp
+          name: tmp-volume
       volumes:
       - name: cyclecloud-data-volume
         persistentVolumeClaim:
@@ -163,3 +169,5 @@ spec:
       - name: prometheus-config-volume
         configMap:
           name: prometheus-exporter-config
+      - name: tmp-volume
+        emptyDir: {}
