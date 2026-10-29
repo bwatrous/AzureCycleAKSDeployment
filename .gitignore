@@ -1,5 +1,13 @@
 # Local .terraform directories
 **/.terraform/*
+
+# Local Bicep parameter files
+/bicep/main.parameters.*.json
+/bicep/main.myparameters.json
+
+# Ignore local values files
+values.*.yaml
+
 .DS_Store
 perf-improvements/
 terraform-aks-azure-cni/cyclecloud/

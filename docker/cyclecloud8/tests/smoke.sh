@@ -85,6 +85,10 @@ for test_case in image empty-volumes existing-volumes; do
         prepare_empty_volumes
     fi
     if [[ $test_case != image ]]; then
+        mount_args+=(--read-only
+            --tmpfs /tmp:rw,exec,nosuid,mode=1777
+            --tmpfs /opt/cycle_server/logs:uid=1169,gid=1169,mode=0755
+            --tmpfs /opt/cycle_server/.ssh:uid=1169,gid=1169,mode=0700)
         for directory in work system config data; do
             mount_args+=(--mount "type=bind,source=$test_workdir/$directory,target=/opt/cycle_server/$directory")
         done
@@ -111,8 +115,16 @@ for test_case in image empty-volumes existing-volumes; do
         --env CYCLECLOUD_FORCE_DELETE_VMS=false \
         --env CYCLECLOUD_FORCE_DELETE_VMSS=false \
         --entrypoint /bin/bash "$image" \
-        -c 'touch /tmp/cyclecloud-smoke-started && chmod +x scripts/run_cyclecloud.sh && ./scripts/run_cyclecloud.sh')
+        -c 'touch /tmp/cyclecloud-smoke-started && exec /bin/bash /cs-install/scripts/run_cyclecloud.sh')
     unset test_password
+
+    if [[ $test_case != image ]]; then
+        if [[ $(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$container_id") != true ]]; then
+            echo "FAIL: volume test container must have a read-only root filesystem." >&2
+            exit 1
+        fi
+        echo "PASS: volume test container has a read-only root filesystem."
+    fi
 
     actual_user=$(docker exec "$container_id" id -un)
     actual_uid=$(docker exec "$container_id" id -u)

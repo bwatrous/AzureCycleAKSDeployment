@@ -5,6 +5,12 @@
     "prefix": {
       "value": "cyclecloud"
     },
+    "resourceGroupName": {
+      "value": "<your-alias>-cyclecloud-aks-rg"
+    },
+    "nodeResourceGroupName": {
+      "value": "<your-alias>-cyclecloud-aks-nodes-rg"
+    },
     "location": {
       "value": "westus2"
     },
@@ -18,7 +24,7 @@
       "value": "<vnet-name>"
     },
     "systemNodeSubnetName": {
-      "value": "SystemSubnet"
+      "value": "<subnet-name>"
     },
     "systemNodeSubnetAddressPrefix": {
       "value": "10.10.0.0/24"

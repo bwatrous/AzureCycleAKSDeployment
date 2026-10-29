@@ -2,6 +2,14 @@
 
 This deployment creates an AKS cluster in a new resource group while reusing an existing virtual network and Azure Container Registry. It contains no user-specific defaults.
 
+This guide owns the infrastructure configuration and deployment steps. Start with the [root walkthrough](../README.md) to build and push the image, complete this guide when directed, then follow the link at the end to continue installing CycleCloud.
+
+From the repository root:
+
+```bash
+cd bicep
+```
+
 ## Resources
 
 - AKS resource group and cluster
@@ -30,31 +38,30 @@ Create a personal parameter file from the tracked template:
 cp main.parameters.json "main.parameters.${USER}.json"
 ```
 
-Edit the new file, such as `main.parameters.nidhi.json`, and replace the placeholder workload resource group, VNet, ACR, and storage account values with resources from your Azure environment. The generated workload identity receives Contributor on `workloadResourceGroupName` and Storage Blob Data Contributor on the selected storage account. Change the sample address ranges if they overlap your network. Personal parameter files matching `main.parameters.*.json` are ignored by Git.
+Edit the copy using the table below. Replace every placeholder and review the sample address ranges before deploying. Personal parameter files matching `main.parameters.*.json` are ignored by Git.
 
-By default, `deploy.sh` reads the node SSH public key from `~/.ssh/id_rsa.pub`; no separate export is required. To use another key file:
-
-```bash
-AKS_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/id_ed25519.pub" ./deploy.sh "./main.parameters.${USER}.json"
-```
-
-You can also provide the public key directly through `AKS_SSH_PUBLIC_KEY`.
-
-For standard Azure CNI, set `networkPluginMode` and `podCidr` to empty strings. For Azure CNI Overlay, set `networkPluginMode` to `overlay` and provide a non-overlapping pod CIDR.
+| Settings | What to enter |
+|----------|---------------|
+| `prefix`, `resourceGroupName`, `nodeResourceGroupName`, `location` | Your naming prefix, new AKS resource groups, and Azure region. `aksClusterName` defaults to `<prefix>-aks` unless explicitly supplied. |
+| `virtualNetworkSubscriptionId`, `virtualNetworkResourceGroupName`, `virtualNetworkName` | Existing VNet details. |
+| `systemNodeSubnetName`, `systemNodeSubnetAddressPrefix` | Name and address range of the subnet to provision in the existing VNet for AKS node private IP addresses. |
+| `serviceCidr` | Virtual address range for Kubernetes `ClusterIP` services; not a VNet subnet. |
+| `dnsServiceIP` | CoreDNS service address inside `serviceCidr`. |
+| `networkPluginMode`, `podCidr` | For the default standard Azure CNI mode, leave both empty. For Azure CNI Overlay, use `overlay` and a non-overlapping pod address range. |
+| `apiServerVnetIntegrationEnabled` | Leave `false` for this walkthrough. See [optional API-server VNet integration](#optional-api-server-vnet-integration) to enable it. |
+| `workloadIdentityEnabled`, `workloadIdentityNamespace`, `workloadIdentityServiceAccountName` | Use `true`, `default`, and `cyclecloud-sa` for the current chart, which hardcodes the service-account name. Federation requires workload identity to be enabled and both names to be non-empty. |
+| `privateClusterEnabled` | Leave `false` for the default public, authenticated AKS API endpoint. Private clusters require network access and DNS connectivity to the AKS private DNS zone, configured outside this deployment. |
+| `containerRegistrySubscriptionId`, `containerRegistryResourceGroupName`, `containerRegistryName` | The same ACR used to push the image in the root walkthrough. |
+| `workloadResourceGroupSubscriptionId`, `workloadResourceGroupName` | Existing resource group where CycleCloud will manage compute resources. |
+| `storageAccountSubscriptionId`, `storageAccountResourceGroupName`, `storageAccountName` | Existing CycleCloud storage account details. |
 
 ### Network Address Ranges
 
-| Parameter | Purpose | Required by the default configuration |
-|-----------|---------|---------------------------------------|
-| `systemNodeSubnetAddressPrefix` | Subnet in the existing VNet where AKS nodes receive private IP addresses. | Yes |
-| `serviceCidr` | Virtual address range used by Kubernetes `ClusterIP` services. It is not part of the VNet. | Yes |
-| `dnsServiceIP` | Address assigned to CoreDNS. It must be inside `serviceCidr`. | Yes |
-| `podCidr` | Address range assigned to pods when using Azure CNI Overlay or kubenet. | No for the default standard Azure CNI mode |
-| `apiServerSubnetAddressPrefix` | Dedicated delegated subnet for API-server VNet integration. This is not the API server IP address. | No |
+The node and optional API-server subnets must fit inside the existing VNet address space and must not overlap other subnets. Service and pod CIDRs must not overlap each other, the VNet, peered VNets, VPN address spaces, or connected on-premises networks.
 
-These ranges must not overlap each other, the existing VNet, peered VNets, VPN address spaces, or connected on-premises networks.
+### Optional API-Server VNet Integration
 
-API-server VNet integration is disabled by default, so the default JSON file omits `apiServerSubnetName` and `apiServerSubnetAddressPrefix`. To enable it, set `apiServerVnetIntegrationEnabled` to `true` and add both parameters:
+To enable this option, set `apiServerVnetIntegrationEnabled` to `true` and add the following parameters to your personal file. They name and allocate a dedicated delegated API-server subnet; the prefix is a subnet range, not the API server IP address. Replace the sample range to fit your network.
 
 ```json
 "apiServerSubnetName": {
@@ -69,46 +76,46 @@ API-server VNet integration currently uses a preview AKS API; verify the require
 
 ## Validate And Deploy
 
-Select the subscription in which the AKS resource group will be created, then run:
+Confirm the subscription in which the AKS resource group will be created is set properly:
 
 ```bash
-az account set --subscription '<subscription-name-or-id>'
-./deploy.sh
+az account show --query "{Name:name,Id:id}" -o table
 ```
 
-Deploy with your personal parameter file:
+### Run The Deployment
+
+Deploy using your personal parameter file and the default SSH public key at `~/.ssh/id_rsa.pub`:
 
 ```bash
-./deploy.sh "./main.parameters.${USER}.json"
+bash ./deploy.sh "./main.parameters.${USER}.json"
 ```
 
-The script validates the subscription deployment before creating it. It does not register preview features or modify local DNS and hosts files.
-
-For a private cluster, configure DNS connectivity to the AKS private DNS zone through your network platform. Keep that network-specific DNS linking outside this reusable cluster deployment.
-
-The default `privateClusterEnabled` value is `false`, so the AKS API endpoint is public but still requires Azure and Kubernetes authorization. After deployment, connect with:
+To use another public key file, run this command instead.
 
 ```bash
-az aks get-credentials \
-    -n '<aks-cluster-name>' \
-	-g '<aks-resource-group>'
-	
-kubectl get pods -A
+AKS_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/id_ed25519.pub" bash ./deploy.sh "./main.parameters.${USER}.json"
 ```
 
-## Apply The Service Account And Upgrade CycleCloud
+Wait for a successful deployment before continuing.
 
-The Bicep deployment creates the Azure workload identity and federated credential, but it does not deploy Kubernetes resources. Before installing or upgrading the Helm release, edit `../cyclecloud-sa.yaml` and set `azure.workload.identity/client-id` to the `workloadIdentityClientId` output from the Bicep deployment. Ensure its name and namespace match `workloadIdentityServiceAccountName` and `workloadIdentityNamespace` in the parameter file.
+The script validates the subscription deployment before creating it and generates the deployment name automatically. Its subscription deployment metadata location defaults to `westus2`; the resource region is set by the `location` parameter. It does not register preview features or modify local DNS and hosts files.
 
-Apply the service account manually before running Helm:
+## Deployment Outputs And Application Installation
+
+Record these values from the successful deployment output for the application steps:
+
+| Output | Purpose |
+|--------|---------|
+| `aksClusterName` | Cluster name for credential retrieval. |
+| `aksResourceGroupName` | Resource group for credential retrieval. |
+| `workloadIdentityClientId` | Client ID for the CycleCloud service-account annotation when workload identity is enabled. |
+
+All three values must be present for the chart walkthrough.
+
+Bicep does not deploy Kubernetes resources or configure Helm values. Return to the repository root:
 
 ```bash
-kubectl apply -f ../cyclecloud-sa.yaml
-kubectl get serviceaccount cyclecloud-sa -n default
-
-helm upgrade --install cyclecloud ../charts/cyclecloud \
-	--namespace default \
-	-f ../values.yaml
+cd ..
 ```
 
-Reapply the service account whenever its workload identity client ID, name, or namespace changes, before the next Helm upgrade.
+Continue with [step 5 of the root walkthrough](../README.md#5-install-client-tools-and-connect-to-aks) for Kubernetes access, then apply the service account and install CycleCloud.

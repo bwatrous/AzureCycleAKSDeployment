@@ -96,10 +96,10 @@ spec:
           limits:
             memory: "{{ .Values.resources.limits.memory }}"
             cpu: "{{ .Values.resources.limits.cpu }}"
-        command: ["/bin/bash", "-c"]
+        command: ["/bin/bash"]
         securityContext:
           {{- toYaml .Values.securityContext.containerSecurityContext | nindent 10 }}
-        args: ["-c", "chmod +x scripts/run_cyclecloud.sh && ./scripts/run_cyclecloud.sh"]
+        args: ["/cs-install/scripts/run_cyclecloud.sh"]
         name: cycle
         ports:
         - containerPort: 8443
