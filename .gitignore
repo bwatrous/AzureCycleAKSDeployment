@@ -31,3 +31,5 @@ install_instructures.txt
 test.yaml
 
 terraform-aks-azure-cni/.terraform.lock.hcl
+# Python bytecode
+__pycache__/

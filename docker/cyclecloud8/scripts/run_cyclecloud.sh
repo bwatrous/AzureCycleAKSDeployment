@@ -6,31 +6,30 @@ CS_ROOT="/opt/cycle_server"
 
 STASH_ROOT="/opt_cycle_server"
 
-if [ ! -f "${STASH_ROOT}/system/version" ]; then
-    echo "Missing stashed CycleCloud system version: ${STASH_ROOT}/system/version" >&2
-    exit 1
-fi
+for stashed_dir in system config; do
+    if [ ! -d "${STASH_ROOT}/${stashed_dir}" ]; then
+        echo "Missing stashed CycleCloud ${stashed_dir} directory: ${STASH_ROOT}/${stashed_dir}" >&2
+        exit 1
+    fi
+done
 
-STASHED_SYSTEM_MD5=$(md5sum "${STASH_ROOT}/system/version" | awk '{print $1}')
-CURRENT_SYSTEM_MD5=""
-if [ -f "${CS_ROOT}/system/version" ]; then
-    CURRENT_SYSTEM_MD5=$(md5sum "${CS_ROOT}/system/version" | awk '{print $1}')
-fi
+# system/ is image content and is expected on ephemeral storage (emptyDir),
+# so it is always replaced from the image to avoid stale or partial copies.
+echo "Copying CycleCloud system files from the container image..."
+find "${CS_ROOT}/system" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+cp -a "${STASH_ROOT}/system/." "${CS_ROOT}/system/"
 
-if [ "${STASHED_SYSTEM_MD5}" != "${CURRENT_SYSTEM_MD5}" ]; then
-    echo "Synchronizing CycleCloud system files from the container image..."
-    find "${CS_ROOT}/system" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-    cp -R "${STASH_ROOT}/system/." "${CS_ROOT}/system/"
-fi
-
-if [ ! -d "${STASH_ROOT}/config" ]; then
-    echo "Missing stashed CycleCloud config directory: ${STASH_ROOT}/config" >&2
-    exit 1
-fi
-
+# config/ may be persistent. Seed it when empty; otherwise add files that are
+# new in the image without overwriting existing ones. config/data/ is skipped
+# because CycleCloud renames imported files there, so re-adding them would
+# re-import stale records on every start.
 if [ -z "$(find "${CS_ROOT}/config" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
     echo "Initializing empty CycleCloud config directory from the container image..."
-    cp -R "${STASH_ROOT}/config/." "${CS_ROOT}/config/"
+    cp -a "${STASH_ROOT}/config/." "${CS_ROOT}/config/"
+else
+    echo "Adding new CycleCloud config files from the container image..."
+    tar -C "${STASH_ROOT}/config" --exclude=./data -cf - . \
+        | tar -C "${CS_ROOT}/config" --skip-old-files -xpf -
 fi
 
 

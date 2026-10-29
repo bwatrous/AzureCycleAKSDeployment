@@ -60,14 +60,16 @@ RUN echo "Stashing a copy of the cycle_server data directory..." \
     && mkdir -p /opt_cycle_server/  \
     && cp -a /opt/cycle_server/data /opt_cycle_server/  \
     && cp -a /opt/cycle_server/work /opt_cycle_server/  \
+    && cp -a /opt/cycle_server/system /opt_cycle_server/ \
+    && cp -a /opt/cycle_server/config /opt_cycle_server/ \
     && chown -R cycle_server:cycle_server /opt_cycle_server  \
     && ls -ltra  /opt_cycle_server/data/ads/
 
 # Prepare directory structure for mounting persistent volumes
 # Retain content of data, and work directories
 # Clear content of .ssh and logs directories
-# NOTE: we do not persist the config directory since content may change across upgrades
-#       instead, we configure using container startup script
+# NOTE: system and config are restored from /opt_cycle_server by the startup script:
+#       system is replaced on every start, config is seeded or merged without overwriting
 RUN echo "Creating mount location and symlinks for data, .ssh, logs, work" \
     && mkdir -p /mnt/cycle_server/  \
     && mv /opt/cycle_server/data /mnt/cycle_server/ \

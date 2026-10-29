@@ -62,10 +62,11 @@ bash docker/cyclecloud8/tests/smoke.sh "$IMAGE"
 The test requires Docker, Bash, and OpenSSL on the host and an already-built image.
 It tests three disposable containers sequentially using the normal startup script:
 one with image-provided directories, then one with empty host folders bind-mounted
-at `/opt/cycle_server/{work,system,config,data}`, then a fresh container mounting
+at `/opt/cycle_server/{work,config,data}`, then a fresh container mounting
 those same populated folders. Both volume cases use a read-only root filesystem
-and writable temporary mounts for `/tmp`, `/opt/cycle_server/logs`, and
-`/opt/cycle_server/.ssh`, matching the chart's writable paths.
+and writable temporary mounts for `/tmp`, `/opt/cycle_server/logs`,
+`/opt/cycle_server/.ssh`, and `/opt/cycle_server/system`, matching the chart's
+writable paths (the chart mounts `system` as an `emptyDir`).
 Each case checks that the
 default user and startup process run as `cycle_server` (UID/GID `1169`), waits for
 local CLI configuration to be refreshed by that startup, checks CycleCloud's
@@ -75,14 +76,20 @@ It exits nonzero on failure and prints the last 100 startup log lines.
 
 The empty-volume case creates a unique `.cyclecloud-smoke.*` working directory
 under the current directory. An isolated root helper container sets ownership of
-the four empty folders to `1169:1169`, matching writable Kubernetes volumes; the
+the three empty folders to `1169:1169`, matching writable Kubernetes volumes; the
 application itself still runs as the image's default non-root user. The test
-verifies that startup populates all four folders, restores the expected system
-version, and leaves the mounted directories writable.
-Before replacing the container, the test writes a marker in each mounted directory
-and stops CycleCloud cleanly. The existing-volume case repeats the startup and
-health checks and verifies that all four markers survived. The host folders are
+verifies that startup populates the persistent folders, copies the image's
+`system` directory into ephemeral storage, and leaves the mounted directories writable.
+Before replacing the container, the test writes a marker in each mounted directory,
+removes one image-provided config file, edits another, and stops CycleCloud cleanly.
+The existing-volume case repeats the startup and health checks, verifies that all
+three markers survived, that the missing config file was restored from the image,
+and that the local config edit was not overwritten. The host folders are
 retained between these cases and removed only at the end.
+
+On every start, the startup script replaces `system` from the image. Persistent
+`config` is seeded when empty; otherwise only files that are missing are added from
+the image, and existing files and `config/data` are left untouched.
 
 The chart invokes the startup script through Bash without modifying image files
 at runtime, so it also supports `securityContext.containerSecurityContext.readOnlyRootFilesystem: true`.

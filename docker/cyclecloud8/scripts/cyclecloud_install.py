@@ -135,6 +135,11 @@ def setup_local_account(admin_user, password, webserver_port):
         print('Password specified, using it as the admin password')
         cyclecloud_admin_pw = password
     else:
+        # The random password is intentionally neither shown nor persisted, and it
+        # changes on each start. The admin user should generally not be used:
+        # users are expected to add their own accounts at runtime (often via a
+        # ConfigMap) or sign in with Entra. If admin access is needed, run
+        # `/opt/cycle_server/cycle_server reset_access <username>` in the container.
         cyclecloud_admin_pw = generate_password_string()
 
     account_data = [

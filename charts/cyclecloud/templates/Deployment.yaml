@@ -156,8 +156,7 @@ spec:
           name: cyclecloud-data-volume
           subPath: config
         - mountPath: "/opt/cycle_server/system"
-          name: cyclecloud-data-volume
-          subPath: system
+          name: system-volume
         - mountPath: /cs-install/prometheus_exporter_config.yaml
           name: prometheus-config-volume
         - mountPath: /tmp
@@ -170,4 +169,6 @@ spec:
         configMap:
           name: prometheus-exporter-config
       - name: tmp-volume
+        emptyDir: {}
+      - name: system-volume
         emptyDir: {}

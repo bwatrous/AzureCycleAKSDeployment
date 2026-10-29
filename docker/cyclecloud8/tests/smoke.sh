@@ -41,7 +41,7 @@ cleanup() {
         if ! docker run --rm --pull=never --network none --user 0:0 \
             --mount "type=bind,source=$test_workdir,target=/smoke" \
             --entrypoint /bin/bash "$image" \
-            -c 'rm -rf -- /smoke/work /smoke/system /smoke/config /smoke/data'; then
+            -c 'rm -rf -- /smoke/work /smoke/config /smoke/data'; then
             echo "Failed to clean test volume directories: $test_workdir" >&2
             result=1
         elif ! rmdir -- "$test_workdir"; then
@@ -58,15 +58,15 @@ trap 'exit 143' TERM
 prepare_empty_volumes() {
     local directory
     test_workdir=$(mktemp -d "$PWD/.cyclecloud-smoke.XXXXXX")
-    for directory in work system config data; do
+    for directory in work config data; do
         mkdir "$test_workdir/$directory"
     done
     # Match the writable volume ownership supplied by Kubernetes, without host sudo.
     docker run --rm --pull=never --network none --user 0:0 \
         --mount "type=bind,source=$test_workdir,target=/smoke" \
         --entrypoint /bin/bash "$image" \
-        -c 'chown 1169:1169 /smoke/work /smoke/system /smoke/config /smoke/data'
-    for directory in work system config data; do
+        -c 'chown 1169:1169 /smoke/work /smoke/config /smoke/data'
+    for directory in work config data; do
         if [[ -n $(find "$test_workdir/$directory" -mindepth 1 -print -quit) ]]; then
             echo "FAIL: volume directory is not empty: $test_workdir/$directory" >&2
             exit 1
@@ -88,8 +88,9 @@ for test_case in image empty-volumes existing-volumes; do
         mount_args+=(--read-only
             --tmpfs /tmp:rw,exec,nosuid,mode=1777
             --tmpfs /opt/cycle_server/logs:uid=1169,gid=1169,mode=0755
-            --tmpfs /opt/cycle_server/.ssh:uid=1169,gid=1169,mode=0700)
-        for directory in work system config data; do
+            --tmpfs /opt/cycle_server/.ssh:uid=1169,gid=1169,mode=0700
+            --tmpfs /opt/cycle_server/system:rw,exec,uid=1169,gid=1169,mode=0755)
+        for directory in work config data; do
             mount_args+=(--mount "type=bind,source=$test_workdir/$directory,target=/opt/cycle_server/$directory")
         done
     fi
@@ -180,20 +181,27 @@ for test_case in image empty-volumes existing-volumes; do
             test -s /opt/cycle_server/data/ads/master.logfile
             test -d /opt/cycle_server/work/staging
         '
+        echo "PASS: ephemeral system directory was populated from the container image."
         if [[ $test_case == empty-volumes ]]; then
+            # Simulate an older persisted config: drop a file the image provides
+            # and locally modify another that must not be overwritten.
             docker exec "$container_id" /bin/bash -ec '
-                for directory in work system config data; do
+                for directory in work config data; do
                     printf "%s\n" "$directory" > "/opt/cycle_server/$directory/.smoke-persistence"
                 done
+                rm -f /opt/cycle_server/config/init/README.txt
+                printf "/* smoke-local-edit */\n" >> /opt/cycle_server/config/web/theme.css
             '
-            echo "PASS: empty host-mounted work, system, config, and data directories were initialized."
+            echo "PASS: empty host-mounted work, config, and data directories were initialized."
         else
             docker exec "$container_id" /bin/bash -ec '
-                for directory in work system config data; do
+                for directory in work config data; do
                     test "$(cat "/opt/cycle_server/$directory/.smoke-persistence")" = "$directory"
                 done
+                cmp /opt_cycle_server/config/init/README.txt /opt/cycle_server/config/init/README.txt
+                grep -qF "/* smoke-local-edit */" /opt/cycle_server/config/web/theme.css
             '
-            echo "PASS: a fresh container started with existing volumes and retained markers in all four directories."
+            echo "PASS: existing volumes retained markers; persisted config gained missing image files without overwriting local edits."
         fi
     fi
 
