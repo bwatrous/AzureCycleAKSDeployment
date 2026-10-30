@@ -78,8 +78,13 @@ It exits nonzero on failure and prints the last 100 startup log lines.
 
 The empty-volume case creates a unique `.cyclecloud-smoke.*` working directory
 under the current directory. An isolated root helper container sets ownership of
-the three empty folders to `1169:1169`, matching writable Kubernetes volumes; the
+the three empty folders to `root:1169` with mode `2775`, modeling Kubernetes
+group-writable volumes without assuming application-UID ownership; the
 application itself still runs as the image's default non-root user. The test
+checks mount-root ownership, permissions, and group writability before startup
+and after initialization, restart, and upgrade. Temporary volume roots use the
+same ownership and permissions.
+The test
 verifies that startup populates the persistent folders, copies the image's
 `system` directory into ephemeral storage, and leaves the mounted directories writable.
 Before replacing the container, the test writes a marker in each mounted directory,
@@ -98,6 +103,23 @@ from the new image. The temporary image is removed on exit.
 On every start, the startup script replaces `system` from the image. Persistent
 `config` is seeded when empty; otherwise only files that are missing are added from
 the image, and existing files and `config/data` are left untouched.
+Population copies directory contents without replaying source-root metadata onto
+mounted roots. Datastore initialization also preserves a directly mounted
+`data/ads` root.
+
+For focused filesystem regressions without starting the CycleCloud service:
+
+```bash
+bash docker/cyclecloud8/tests/mounts.sh ubuntu:24.04
+```
+
+Use an already-present Linux image with Bash, GNU coreutils, find, tar, and
+`setpriv` (for example Ubuntu or AlmaLinux). This isolated, network-disabled test
+runs the checked-out startup script with a stub installer on a read-only root
+filesystem. It checks root-owned group-writable and application-owned roots,
+including a direct `data/ads` mount, hidden and unusual filenames, symlinks,
+executables, restart merging, stale-file removal, and empty sources.
+It is not a full-image service-health test.
 
 The chart invokes the startup script through Bash without modifying image files
 at runtime, so it also supports `securityContext.containerSecurityContext.readOnlyRootFilesystem: true`.

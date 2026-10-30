@@ -6,6 +6,11 @@ CS_ROOT="/opt/cycle_server"
 
 STASH_ROOT="/opt_cycle_server"
 
+copy_contents() {
+    # Copy children, not source/. metadata onto a potentially root-owned mount.
+    find "$1" -mindepth 1 -maxdepth 1 -exec cp -a -t "$2" -- {} +
+}
+
 for stashed_dir in system config; do
     if [ ! -d "${STASH_ROOT}/${stashed_dir}" ]; then
         echo "Missing stashed CycleCloud ${stashed_dir} directory: ${STASH_ROOT}/${stashed_dir}" >&2
@@ -17,7 +22,7 @@ done
 # so it is always replaced from the image to avoid stale or partial copies.
 echo "Copying CycleCloud system files from the container image..."
 find "${CS_ROOT}/system" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-cp -a "${STASH_ROOT}/system/." "${CS_ROOT}/system/"
+copy_contents "${STASH_ROOT}/system" "${CS_ROOT}/system"
 
 # config/ may be persistent. Seed it when empty; otherwise add files that are
 # new in the image without overwriting existing ones. config/data/ is skipped
@@ -25,11 +30,11 @@ cp -a "${STASH_ROOT}/system/." "${CS_ROOT}/system/"
 # re-import stale records on every start.
 if [ -z "$(find "${CS_ROOT}/config" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
     echo "Initializing empty CycleCloud config directory from the container image..."
-    cp -a "${STASH_ROOT}/config/." "${CS_ROOT}/config/"
+    copy_contents "${STASH_ROOT}/config" "${CS_ROOT}/config"
 else
     echo "Adding new CycleCloud config files from the container image..."
     tar -C "${STASH_ROOT}/config" --exclude=./data -cf - . \
-        | tar -C "${CS_ROOT}/config" --skip-old-files -xpf -
+        | tar -C "${CS_ROOT}/config" --skip-old-files --strip-components=1 -xpf -
 fi
 
 
@@ -38,18 +43,14 @@ fi
 # (Copy files within the ads/ directory rather than directory itself to allow mounting at ads/)
 if [ ! -f "${CS_ROOT}/data/ads/master.logfile" ]; then
     echo "Copying stashed cyclecloud data from container to mounted data disk on first start..."
-    pushd ${CS_ROOT}/data
-    rm -rf ./ads
-    mkdir -p ./ads
-    cp -a /opt_cycle_server/data/ads/. ./ads/
-    popd
+    mkdir -p "${CS_ROOT}/data/ads"
+    find "${CS_ROOT}/data/ads" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    copy_contents "${STASH_ROOT}/data/ads" "${CS_ROOT}/data/ads"
 fi
 
 # Copy locally stashed CycleCloud work dir to mounted work dir (need to retain
 # previously deployed jetpack and project versions but ensure the current version is staged)
-pushd ${CS_ROOT}
-cp -a /opt_cycle_server/work/* ./work/ 
-popd
+copy_contents "${STASH_ROOT}/work" "${CS_ROOT}/work"
 
 CLI_HOME="${CS_ROOT}/work/cli-home"
 mkdir -p "${CLI_HOME}"
@@ -175,4 +176,3 @@ do
   sleep 600
   ${CS_ROOT}/cycle_server status || exit
 done
-

@@ -70,7 +70,8 @@ prepare_empty_volumes() {
     docker run --rm --pull=never --network none --user 0:0 \
         --mount "type=bind,source=$test_workdir,target=/smoke" \
         --entrypoint /bin/bash "$image" \
-        -c 'chown 1169:1169 /smoke/work /smoke/config /smoke/data'
+        -c 'chown 0:1169 /smoke/work /smoke/config /smoke/data
+            chmod 2775 /smoke/work /smoke/config /smoke/data'
     for directory in work config data; do
         if [[ -n $(find "$test_workdir/$directory" -mindepth 1 -print -quit) ]]; then
             echo "FAIL: volume directory is not empty: $test_workdir/$directory" >&2
@@ -111,9 +112,9 @@ for test_case in image empty-volumes existing-volumes upgrade; do
     if [[ $test_case != image ]]; then
         mount_args+=(--read-only
             --tmpfs /tmp:rw,exec,nosuid,mode=1777
-            --tmpfs /opt/cycle_server/logs:uid=1169,gid=1169,mode=0755
-            --tmpfs /opt/cycle_server/.ssh:uid=1169,gid=1169,mode=0700
-            --tmpfs /opt/cycle_server/system:rw,exec,uid=1169,gid=1169,mode=0755)
+            --tmpfs /opt/cycle_server/logs:uid=0,gid=1169,mode=2775
+            --tmpfs /opt/cycle_server/.ssh:uid=0,gid=1169,mode=2775
+            --tmpfs /opt/cycle_server/system:rw,exec,uid=0,gid=1169,mode=2775)
         for directory in work config data; do
             mount_args+=(--mount "type=bind,source=$test_workdir/$directory,target=/opt/cycle_server/$directory")
         done
@@ -140,7 +141,19 @@ for test_case in image empty-volumes existing-volumes upgrade; do
         --env CYCLECLOUD_FORCE_DELETE_VMS=false \
         --env CYCLECLOUD_FORCE_DELETE_VMSS=false \
         --entrypoint /bin/bash "$run_image" \
-        -c 'touch /tmp/cyclecloud-smoke-started && exec /bin/bash /cs-install/scripts/run_cyclecloud.sh')
+        -ec '
+            if [[ $1 != image ]]; then
+                test "$(id -u)" = 1169
+                test "$(id -g)" = 1169
+                for directory in work config data system logs .ssh; do
+                    path="/opt/cycle_server/$directory"
+                    test "$(stat -c "%u:%g:%a" "$path")" = 0:1169:2775
+                    test -w "$path"
+                done
+            fi
+            touch /tmp/cyclecloud-smoke-started
+            exec /bin/bash /cs-install/scripts/run_cyclecloud.sh
+        ' -- "$test_case")
 
     if [[ $test_case != image ]]; then
         if [[ $(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$container_id") != true ]]; then
@@ -204,7 +217,8 @@ for test_case in image empty-volumes existing-volumes upgrade; do
 
     if [[ $test_case != image ]]; then
         docker exec "$container_id" /bin/bash -ec '
-            for directory in work system config data; do
+            for directory in work system config data logs .ssh; do
+                test "$(stat -c "%u:%g:%a" "/opt/cycle_server/$directory")" = 0:1169:2775
                 test -w "/opt/cycle_server/$directory"
             done
             cmp /opt_cycle_server/system/version /opt/cycle_server/system/version
