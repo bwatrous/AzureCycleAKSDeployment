@@ -73,7 +73,8 @@ def _catch_sys_error(cmd_list):
         print(output)
         return output
     except CalledProcessError as e:
-        print("Error with cmd: %s" % _redact_cmd(e.cmd))
+        e.cmd = _redact_cmd(e.cmd)
+        print("Error with cmd: %s" % e.cmd)
         print("Output: %s" % e.output)
         raise
 
