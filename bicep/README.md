@@ -27,9 +27,19 @@ Role assignments for the workload identity are created only when the federated c
 ## Prerequisites
 
 - Azure CLI authenticated to the deployment subscription
+- Bicep CLI **v0.34.1 or later**, required because the template omits module deployment names
 - Owner or User Access Administrator plus resource deployment permissions on the relevant scopes, including the CycleCloud workload resource group
 - An existing ACR and CycleCloud storage account
 - Permission to deploy to the ACR, storage account, and (when peering) hub VNet subscriptions when they differ from the current subscription. Creating the hub-to-spoke peering requires Network Contributor (or `virtualNetworkPeerings/write` and `peer` permissions) on the hub VNet.
+
+Check the Bicep version used by Azure CLI before deploying:
+
+```bash
+az bicep version
+```
+
+If Bicep is missing, run `az bicep install`. If the version is older than
+v0.34.1, run `az bicep upgrade`, then check the version again.
 
 ## Configure
 
