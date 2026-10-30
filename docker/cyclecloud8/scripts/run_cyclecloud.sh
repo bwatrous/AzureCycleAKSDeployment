@@ -33,8 +33,11 @@ if [ -z "$(find "${CS_ROOT}/config" -mindepth 1 -maxdepth 1 -print -quit)" ]; th
     copy_contents "${STASH_ROOT}/config" "${CS_ROOT}/config"
 else
     echo "Adding new CycleCloud config files from the container image..."
-    tar -C "${STASH_ROOT}/config" --exclude=./data -cf - . \
-        | tar -C "${CS_ROOT}/config" --skip-old-files --strip-components=1 -xpf -
+    (
+        set -o pipefail
+        tar -C "${STASH_ROOT}/config" --exclude=./data -cf - . \
+            | tar -C "${CS_ROOT}/config" --skip-old-files --strip-components=1 -xpf -
+    )
 fi
 
 

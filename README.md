@@ -106,6 +106,12 @@ the image, and existing files and `config/data` are left untouched.
 Population copies directory contents without replaying source-root metadata onto
 mounted roots. Datastore initialization also preserves a directly mounted
 `data/ads` root.
+Config merging aborts startup if either archive creation or extraction fails.
+Files copied before a failure may remain; correct the reported source or
+destination error and inspect any newly created files for incomplete contents
+before restarting to add the remaining missing files. Existing paths are not
+repaired automatically because the merge preserves them. This is not an atomic
+merge or rollback.
 
 For focused filesystem regressions without starting the CycleCloud service:
 
@@ -118,7 +124,10 @@ Use an already-present Linux image with Bash, GNU coreutils, find, tar, and
 runs the checked-out startup script with a stub installer on a read-only root
 filesystem. It checks root-owned group-writable and application-owned roots,
 including a direct `data/ads` mount, hidden and unusual filenames, symlinks,
-executables, restart merging, stale-file removal, and empty sources.
+executables, restart merging, stale-file removal, and empty sources. It also
+verifies that archive creation and extraction failures prevent installer
+execution, corrected retries succeed, and first-start backup counting and
+restore selection remain unchanged.
 It is not a full-image service-health test.
 
 The chart invokes the startup script through Bash without modifying image files
