@@ -7,7 +7,6 @@ metadata:
     azure.workload.identity/use: "true"  # Required. Only pods with this label can use workload identity.
   name: {{ include "cyclecloud.fullname" . }}
 spec:
-  serviceAccountName: "cyclecloud-sa"
   replicas: {{ .Values.cycle.replicas }}
   updateStrategy: 
     type: "RollingUpdate"
