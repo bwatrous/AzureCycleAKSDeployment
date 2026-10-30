@@ -95,7 +95,7 @@ for test_case in image empty-volumes existing-volumes; do
         done
     fi
 
-    # Only disposable credentials are used: the startup script traces its arguments.
+    # Disposable credential; the logs are checked below to ensure it is never printed.
     test_password="Aa1!$(openssl rand -hex 24)"
     container_id=$(docker run --detach --pull=never --network none \
         "${mount_args[@]}" \
@@ -117,7 +117,6 @@ for test_case in image empty-volumes existing-volumes; do
         --env CYCLECLOUD_FORCE_DELETE_VMSS=false \
         --entrypoint /bin/bash "$image" \
         -c 'touch /tmp/cyclecloud-smoke-started && exec /bin/bash /cs-install/scripts/run_cyclecloud.sh')
-    unset test_password
 
     if [[ $test_case != image ]]; then
         if [[ $(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$container_id") != true ]]; then
@@ -171,6 +170,14 @@ for test_case in image empty-volumes existing-volumes; do
         exit 1
     fi
 
+    # Capture first: with pipefail, grep -q closing the pipe early would hide a match.
+    container_logs=$(docker logs "$container_id" 2>&1)
+    if grep -qF -- "$test_password" <<<"$container_logs"; then
+        echo "FAIL: the CycleCloud password appears in the container logs." >&2
+        exit 1
+    fi
+    echo "PASS: the CycleCloud password does not appear in the container logs."
+
     if [[ $test_case != image ]]; then
         docker exec "$container_id" /bin/bash -ec '
             for directory in work system config data; do
@@ -208,4 +215,5 @@ for test_case in image empty-volumes existing-volumes; do
     docker exec "$container_id" /opt/cycle_server/cycle_server stop
     docker rm --force --volumes "$container_id" >/dev/null
     container_id=
+    unset test_password
 done

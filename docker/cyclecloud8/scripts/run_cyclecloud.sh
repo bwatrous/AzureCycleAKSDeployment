@@ -106,7 +106,9 @@ if [ "${NEEDS_RESTORE}" == "true" ]; then
     echo "yes" | ${CS_ROOT}/util/restore.sh
 fi
 
-# Now run or re-run the install script to ensure all accounts are configured
+# Now run or re-run the install script to ensure all accounts are configured.
+# CYCLECLOUD_PASSWORD is read from the environment by the install script so it is
+# not expanded into the shell trace (set -x).
 # options : 
 #     DRYRUN="--dryrun" for testing
 #     NO_DEFAULT_ACCOUNT="--noDefaultAccount" to disable initial CycleCloud account creation
@@ -135,7 +137,7 @@ else
 fi
 
 python3 /cs-install/scripts/cyclecloud_install.py \
-    ${IDENTITY_TYPE} --username=${CYCLECLOUD_USERNAME} --password="${CYCLECLOUD_PASSWORD}" \
+    ${IDENTITY_TYPE} --username=${CYCLECLOUD_USERNAME} \
     --publickey="${CYCLECLOUD_USER_PUBKEY}" \
     --storageAccount=${CYCLECLOUD_STORAGE} \
     --resourceGroup=${CYCLECLOUD_RESOURCE_GROUP} ${DRYRUN} ${NO_DEFAULT_ACCOUNT} \

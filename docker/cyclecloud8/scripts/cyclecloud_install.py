@@ -63,14 +63,17 @@ def _write_config_data(data, filename):
     _catch_sys_error(["/opt/cycle_server/cycle_server", "import_data","-f", data_file])
 
 
+def _redact_cmd(cmd_list):
+    return [re.sub(r"^(--password=).*", r"\1***", str(arg)) for arg in cmd_list]
+
 def _catch_sys_error(cmd_list):
     try:
         output = check_output(cmd_list)
-        print(cmd_list)
+        print(_redact_cmd(cmd_list))
         print(output)
         return output
     except CalledProcessError as e:
-        print("Error with cmd: %s" % e.cmd)
+        print("Error with cmd: %s" % _redact_cmd(e.cmd))
         print("Output: %s" % e.output)
         raise
 
@@ -685,8 +688,8 @@ def main():
 
     parser.add_argument("--password",
                         dest="password",
-                        default="",
-                        help="The password for the CycleCloud UI user")
+                        default=os.environ.get("CYCLECLOUD_PASSWORD", ""),
+                        help="The password for the CycleCloud UI user (defaults to $CYCLECLOUD_PASSWORD)")
 
     parser.add_argument("--publickey",
                         dest="publickey",
@@ -773,7 +776,8 @@ def main():
                         help="The UID for the CycleCloud Entra service account")
     args = parser.parse_args()
 
-    print("Debugging arguments: %s" % args)
+    secret_args = ("password", "applicationSecret")
+    print("Debugging arguments: %s" % {k: ("***" if k in secret_args and v else v) for k, v in vars(args).items()})
 
     if not already_installed():
         configure_msft_repos(args.insidersBuild)
