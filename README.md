@@ -217,7 +217,9 @@ Edit the [service-account manifest](./charts/cyclecloud/cyclecloud-sa.yaml):
 - Keep `metadata.name: cyclecloud-sa` and `metadata.namespace: default`, matching the Bicep federation settings.
 - Do not put shell variables or Helm expressions in this plain Kubernetes YAML.
 
-Configure the [chart values](./charts/cyclecloud/values.yaml) for your environment:
+Keep the tracked [chart defaults](./charts/cyclecloud/values.yaml) unchanged. Create `charts/cyclecloud/values.local.yaml` containing only your environment-specific overrides from the table below, using the same nested YAML structure as the defaults (for example, `containerImage` under `cycle`).
+
+Helm merges this file over the chart's base `values.yaml` only when you explicitly pass `-f ./charts/cyclecloud/values.local.yaml`, as shown in step 7. Placing an extra file in the chart directory does not load it automatically. Replacing the existing `values.yaml` changes the defaults rather than creating an override layer.
 
 | Value | Setting |
 |-------|---------|
@@ -234,7 +236,7 @@ Configure the [chart values](./charts/cyclecloud/values.yaml) for your environme
 The tested small configuration used a 1-CPU / 8-GiB request, a 2-CPU / 8-GiB limit, and a `4096M` heap on a 4-vCPU / 16-GiB node. This is test sizing, not a production recommendation.
 
 > [!WARNING]
-> The chart values file is tracked by Git. Do not stage or commit it with passwords or personal configuration. The current chart passes the password into the container environment; this walkthrough does not change that behavior.
+> The existing `.gitignore` excludes `values.local.yaml`. Do not force-add it or commit passwords or personal configuration.
 
 The pod identity client ID belongs in the service-account annotation. Setting `azureIdentity.clientID` in chart values does not configure the current templates.
 
@@ -253,14 +255,14 @@ Helm does not create this account because the manifest is outside the chart's te
 The service defaults to a public `LoadBalancer`. Review network exposure before installing.
 
 ```bash
-helm lint ./charts/cyclecloud
+helm lint ./charts/cyclecloud -f ./charts/cyclecloud/values.local.yaml
 ```
 
 Render the chart and validate it against the cluster:
 
 ```bash
 set -o pipefail
-helm template cyclecloud ./charts/cyclecloud --namespace default | kubectl apply --dry-run=server --validate=strict -f -
+helm template cyclecloud ./charts/cyclecloud --namespace default -f ./charts/cyclecloud/values.local.yaml | kubectl apply --dry-run=server --validate=strict -f -
 ```
 
 Both rendering and server validation must succeed. These checks do not prove image availability or runtime Azure permissions.
@@ -268,7 +270,7 @@ Both rendering and server validation must succeed. These checks do not prove ima
 Install or upgrade:
 
 ```bash
-helm upgrade --install cyclecloud ./charts/cyclecloud --namespace default
+helm upgrade --install cyclecloud ./charts/cyclecloud --namespace default -f ./charts/cyclecloud/values.local.yaml
 ```
 
 ## 8. Wait for CycleCloud to become ready
