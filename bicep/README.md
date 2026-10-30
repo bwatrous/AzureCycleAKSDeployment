@@ -56,7 +56,7 @@ Edit the copy using the table below. Replace every placeholder and review the sa
 | `entraIntegrationEnabled`, `azureRbacEnabled`, `entraAdminGroupObjectIds`, `disableLocalAccounts` | Optional Microsoft Entra authentication for the cluster. All default to off. `azureRbacEnabled` and `disableLocalAccounts` require `entraIntegrationEnabled`; with local accounts disabled, use `kubelogin` and an Entra identity to access the cluster. |
 | `privateClusterEnabled` | Leave `false` for the default public, authenticated AKS API endpoint. Private clusters require network access and DNS connectivity to the AKS private DNS zone, configured outside this deployment. |
 | `containerRegistrySubscriptionId`, `containerRegistryResourceGroupName`, `containerRegistryName` | The same ACR used to push the image in the root walkthrough. |
-| `workloadResourceGroupSubscriptionId`, `workloadResourceGroupName` | Existing resource group where CycleCloud will manage compute resources. |
+| `workloadResourceGroupSubscriptionId`, `workloadResourceGroupName` | Existing resource group where CycleCloud will manage compute resources. For automatic account creation in the root walkthrough, this subscription must match the AKS subscription: the installer obtains the subscription ID from node metadata. For a different subscription, set `cycle.configureDefaultAccount` to `false` and create the CycleCloud Azure account manually with the target subscription after installation. |
 | `storageAccountSubscriptionId`, `storageAccountResourceGroupName`, `storageAccountName` | Existing CycleCloud storage account details. |
 
 ### Network Address Ranges
