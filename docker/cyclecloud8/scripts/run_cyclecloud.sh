@@ -38,11 +38,11 @@ fi
 # (Copy files within the ads/ directory rather than directory itself to allow mounting at ads/)
 if [ ! -f "${CS_ROOT}/data/ads/master.logfile" ]; then
     echo "Copying stashed cyclecloud data from container to mounted data disk on first start..."
-   pushd ${CS_ROOT}/data
-   rm -rf ./ads
-   mkdir -p ./ads
+    pushd ${CS_ROOT}/data
+    rm -rf ./ads
+    mkdir -p ./ads
     cp -a /opt_cycle_server/data/ads/. ./ads/
-   popd
+    popd
 fi
 
 # Copy locally stashed CycleCloud work dir to mounted work dir (need to retain

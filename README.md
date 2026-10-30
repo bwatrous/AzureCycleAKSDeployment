@@ -51,6 +51,8 @@ cd ../..
 
 This builds an insiders/testing image; it is not a pinned production-release recipe.
 
+To build on AlmaLinux 9 instead, use the [plain Dockerfile](./docker/cyclecloud8/Dockerfile) (`-f Dockerfile`). It installs the stable CycleCloud 8 repository on the latest `almalinux:9` base image.
+
 ### Smoke-test the image before pushing
 
 From the repository root, run the [container smoke test](./docker/cyclecloud8/tests/smoke.sh):
@@ -60,10 +62,10 @@ bash docker/cyclecloud8/tests/smoke.sh "$IMAGE"
 ```
 
 The test requires Docker, Bash, and OpenSSL on the host and an already-built image.
-It tests three disposable containers sequentially using the normal startup script:
+It tests four disposable containers sequentially using the normal startup script:
 one with image-provided directories, then one with empty host folders bind-mounted
 at `/opt/cycle_server/{work,config,data}`, then a fresh container mounting
-those same populated folders. Both volume cases use a read-only root filesystem
+those same populated folders, then an upgraded image on those folders. All volume cases use a read-only root filesystem
 and writable temporary mounts for `/tmp`, `/opt/cycle_server/logs`,
 `/opt/cycle_server/.ssh`, and `/opt/cycle_server/system`, matching the chart's
 writable paths (the chart mounts `system` as an `emptyDir`).
@@ -86,6 +88,12 @@ The existing-volume case repeats the startup and health checks, verifies that al
 three markers survived, that the missing config file was restored from the image,
 and that the local config edit was not overwritten. The host folders are
 retained between these cases and removed only at the end.
+
+A final upgrade case builds a temporary image from the tested one, adding a new
+config file, changing an existing config file, and adding a system file in the
+image stash, then starts it on the same volumes. It verifies that the new config
+file is added, the persisted config file is not overwritten, and `system` comes
+from the new image. The temporary image is removed on exit.
 
 On every start, the startup script replaces `system` from the image. Persistent
 `config` is seeded when empty; otherwise only files that are missing are added from

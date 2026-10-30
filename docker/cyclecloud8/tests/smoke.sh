@@ -24,6 +24,7 @@ docker image inspect "$image" >/dev/null
 
 container_id=
 test_workdir=
+upgrade_image=
 cleanup() {
     result=$?
     trap - EXIT
@@ -48,6 +49,10 @@ cleanup() {
             echo "Failed to remove test working directory: $test_workdir" >&2
             result=1
         fi
+    fi
+    if [[ -n $upgrade_image ]] && ! docker image rm "$upgrade_image" >/dev/null; then
+        echo "Failed to remove upgrade test image: $upgrade_image" >&2
+        result=1
     fi
     exit "$result"
 }
@@ -74,15 +79,34 @@ prepare_empty_volumes() {
     done
 }
 
-for test_case in image empty-volumes existing-volumes; do
+# Simulate a newer image: one new and one changed file in the stashed config,
+# and one new file in the stashed system directory.
+build_upgrade_image() {
+    upgrade_image="cyclecloud-smoke-upgrade:$$-$RANDOM"
+    docker build --quiet --pull=false --network none --tag "$upgrade_image" - >/dev/null <<EOF
+FROM $image
+USER root
+RUN echo smoke-upgrade > /opt_cycle_server/config/init/smoke-upgrade.txt \
+    && echo '/* smoke-upgrade */' >> /opt_cycle_server/config/web/theme.css \
+    && echo smoke-upgrade > /opt_cycle_server/system/smoke-upgrade.txt \
+    && chown cycle_server:cycle_server /opt_cycle_server/config/init/smoke-upgrade.txt /opt_cycle_server/system/smoke-upgrade.txt
+USER cycle_server
+EOF
+}
+
+for test_case in image empty-volumes existing-volumes upgrade; do
     echo "----------------------------------------"
     echo "Test case: $test_case"
     echo "----------------------------------------"
 
     echo "Testing startup: $test_case"
     mount_args=()
+    run_image=$image
     if [[ $test_case == empty-volumes ]]; then
         prepare_empty_volumes
+    elif [[ $test_case == upgrade ]]; then
+        build_upgrade_image
+        run_image=$upgrade_image
     fi
     if [[ $test_case != image ]]; then
         mount_args+=(--read-only
@@ -115,7 +139,7 @@ for test_case in image empty-volumes existing-volumes; do
         --env CYCLECLOUD_HOSTNAME=localhost \
         --env CYCLECLOUD_FORCE_DELETE_VMS=false \
         --env CYCLECLOUD_FORCE_DELETE_VMSS=false \
-        --entrypoint /bin/bash "$image" \
+        --entrypoint /bin/bash "$run_image" \
         -c 'touch /tmp/cyclecloud-smoke-started && exec /bin/bash /cs-install/scripts/run_cyclecloud.sh')
 
     if [[ $test_case != image ]]; then
@@ -209,6 +233,14 @@ for test_case in image empty-volumes existing-volumes; do
                 grep -qF "/* smoke-local-edit */" /opt/cycle_server/config/web/theme.css
             '
             echo "PASS: existing volumes retained markers; persisted config gained missing image files without overwriting local edits."
+        fi
+        if [[ $test_case == upgrade ]]; then
+            docker exec "$container_id" /bin/bash -ec '
+                cmp /opt_cycle_server/config/init/smoke-upgrade.txt /opt/cycle_server/config/init/smoke-upgrade.txt
+                if grep -qF "/* smoke-upgrade */" /opt/cycle_server/config/web/theme.css; then exit 1; fi
+                cmp /opt_cycle_server/system/smoke-upgrade.txt /opt/cycle_server/system/smoke-upgrade.txt
+            '
+            echo "PASS: upgraded image added its new config file, kept the persisted config file, and replaced system."
         fi
     fi
 
