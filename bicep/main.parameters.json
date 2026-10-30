@@ -14,23 +14,37 @@
     "location": {
       "value": "westus2"
     },
-    "virtualNetworkSubscriptionId": {
-      "value": "<vnet-subscription-id>"
-    },
-    "virtualNetworkResourceGroupName": {
-      "value": "<vnet-resource-group>"
-    },
     "virtualNetworkName": {
-      "value": "<vnet-name>"
+      "value": "<your-alias>-cyclecloud-vnet"
+    },
+    "virtualNetworkAddressPrefixes": {
+      "value": [
+        "10.10.0.0/16"
+      ]
+    },
+    "hubVirtualNetworkResourceId": {
+      "value": ""
+    },
+    "createHubToSpokePeering": {
+      "value": true
+    },
+    "useHubGateway": {
+      "value": false
     },
     "systemNodeSubnetName": {
-      "value": "<subnet-name>"
+      "value": "SystemSubnet"
     },
     "systemNodeSubnetAddressPrefix": {
-      "value": "10.10.0.0/24"
+      "value": ""
     },
     "apiServerVnetIntegrationEnabled": {
       "value": false
+    },
+    "apiServerSubnetName": {
+      "value": "APIServerSubnet"
+    },
+    "apiServerSubnetAddressPrefix": {
+      "value": ""
     },
     "networkPlugin": {
       "value": "azure"
@@ -52,6 +66,21 @@
     },
     "systemNodeCount": {
       "value": 1
+    },
+    "apiServerAuthorizedIpRanges": {
+      "value": []
+    },
+    "entraIntegrationEnabled": {
+      "value": false
+    },
+    "azureRbacEnabled": {
+      "value": false
+    },
+    "entraAdminGroupObjectIds": {
+      "value": []
+    },
+    "disableLocalAccounts": {
+      "value": false
     },
     "privateClusterEnabled": {
       "value": false

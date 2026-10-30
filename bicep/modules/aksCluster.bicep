@@ -61,6 +61,21 @@ param dnsServiceIP string
 @description('Optional pod CIDR.')
 param podCidr string
 
+@description('Public IP ranges (CIDR) allowed to reach the API server. Ignored for private clusters.')
+param apiServerAuthorizedIpRanges array = []
+
+@description('Enable AKS-managed Microsoft Entra integration.')
+param entraIntegrationEnabled bool = false
+
+@description('Use Azure RBAC for Kubernetes authorization.')
+param azureRbacEnabled bool = false
+
+@description('Microsoft Entra group object IDs granted cluster-admin.')
+param entraAdminGroupObjectIds array = []
+
+@description('Disable local (non-Entra) Kubernetes accounts.')
+param disableLocalAccounts bool = false
+
 @description('Create the AKS cluster as a private cluster.')
 param privateClusterEnabled bool
 
@@ -73,7 +88,13 @@ param workloadIdentityEnabled bool
 @description('Tags applied to the AKS cluster.')
 param tags object = {}
 
-resource aksCluster 'Microsoft.ContainerService/managedClusters@2025-04-02-preview' = {
+var aadProfile = {
+  managed: true
+  enableAzureRBAC: azureRbacEnabled
+  adminGroupObjectIDs: entraAdminGroupObjectIds
+}
+
+resource aksCluster 'Microsoft.ContainerService/managedClusters@2026-05-01' = {
   name: name
   location: location
   tags: tags
@@ -87,6 +108,8 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2025-04-02-previ
     kubernetesVersion: empty(kubernetesVersion) ? null : kubernetesVersion
     dnsPrefix: dnsPrefix
     nodeResourceGroup: nodeResourceGroupName
+    disableLocalAccounts: disableLocalAccounts
+    aadProfile: entraIntegrationEnabled ? aadProfile : null
     oidcIssuerProfile: {
       enabled: workloadIdentityEnabled
     }
@@ -105,6 +128,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2025-04-02-previ
     }
     apiServerAccessProfile: {
       enablePrivateCluster: privateClusterEnabled
+      authorizedIPRanges: privateClusterEnabled || empty(apiServerAuthorizedIpRanges) ? null : apiServerAuthorizedIpRanges
       privateDNSZone: privateClusterEnabled ? privateDNSZone : null
       enableVnetIntegration: apiServerVnetIntegrationEnabled
       subnetId: apiServerVnetIntegrationEnabled ? apiServerSubnetId : null

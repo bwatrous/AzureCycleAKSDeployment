@@ -1,5 +1,11 @@
-@description('Name of the existing virtual network.')
+@description('Name of the virtual network to create.')
 param virtualNetworkName string
+
+@description('Azure region for the virtual network.')
+param location string = resourceGroup().location
+
+@description('Address prefixes for the virtual network.')
+param virtualNetworkAddressPrefixes array
 
 @description('Name of the subnet used by AKS nodes.')
 param systemNodeSubnetName string
@@ -16,20 +22,17 @@ param apiServerSubnetName string
 @description('CIDR assigned to the delegated API-server subnet.')
 param apiServerSubnetAddressPrefix string
 
-resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' existing = {
-  name: virtualNetworkName
-}
+@description('Tags applied to the virtual network.')
+param tags object = {}
 
-resource systemNodeSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = {
-  parent: virtualNetwork
+var systemNodeSubnet = {
   name: systemNodeSubnetName
   properties: {
     addressPrefix: systemNodeSubnetAddressPrefix
   }
 }
 
-resource apiServerSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = if (apiServerVnetIntegrationEnabled) {
-  parent: virtualNetwork
+var apiServerSubnet = {
   name: apiServerSubnetName
   properties: {
     addressPrefix: apiServerSubnetAddressPrefix
@@ -44,5 +47,20 @@ resource apiServerSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' 
   }
 }
 
-output systemNodeSubnetId string = systemNodeSubnet.id
-output apiServerSubnetId string = apiServerVnetIntegrationEnabled ? apiServerSubnet.id : ''
+// Subnets are declared inline so the VNet and its subnets are written in one operation.
+resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
+  name: virtualNetworkName
+  location: location
+  tags: tags
+  properties: {
+    addressSpace: {
+      addressPrefixes: virtualNetworkAddressPrefixes
+    }
+    subnets: apiServerVnetIntegrationEnabled ? [systemNodeSubnet, apiServerSubnet] : [systemNodeSubnet]
+  }
+}
+
+output virtualNetworkId string = virtualNetwork.id
+output virtualNetworkName string = virtualNetwork.name
+output systemNodeSubnetId string = resourceId('Microsoft.Network/virtualNetworks/subnets', virtualNetworkName, systemNodeSubnetName)
+output apiServerSubnetId string = apiServerVnetIntegrationEnabled ? resourceId('Microsoft.Network/virtualNetworks/subnets', virtualNetworkName, apiServerSubnetName) : ''
