@@ -4,24 +4,60 @@ set -e
 
 CS_ROOT="/opt/cycle_server"
 
+STASH_ROOT="/opt_cycle_server"
+
+copy_contents() {
+    # Copy children, not source/. metadata onto a potentially root-owned mount.
+    find "$1" -mindepth 1 -maxdepth 1 -exec cp -a -t "$2" -- {} +
+}
+
+for stashed_dir in system config; do
+    if [ ! -d "${STASH_ROOT}/${stashed_dir}" ]; then
+        echo "Missing stashed CycleCloud ${stashed_dir} directory: ${STASH_ROOT}/${stashed_dir}" >&2
+        exit 1
+    fi
+done
+
+# system/ is image content and is expected on ephemeral storage (emptyDir),
+# so it is always replaced from the image to avoid stale or partial copies.
+echo "Copying CycleCloud system files from the container image..."
+find "${CS_ROOT}/system" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+copy_contents "${STASH_ROOT}/system" "${CS_ROOT}/system"
+
+# config/ may be persistent. Seed it when empty; otherwise add files that are
+# new in the image without overwriting existing ones. config/data/ is skipped
+# because CycleCloud renames imported files there, so re-adding them would
+# re-import stale records on every start.
+if [ -z "$(find "${CS_ROOT}/config" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    echo "Initializing empty CycleCloud config directory from the container image..."
+    copy_contents "${STASH_ROOT}/config" "${CS_ROOT}/config"
+else
+    echo "Adding new CycleCloud config files from the container image..."
+    (
+        set -o pipefail
+        tar -C "${STASH_ROOT}/config" --exclude=./data -cf - . \
+            | tar -C "${CS_ROOT}/config" --skip-old-files --strip-components=1 -xpf -
+    )
+fi
+
 
 # If CycleCloud data dir is empty (new persistent volume mount) or corrupt
 # then copy stashed data dir into place
-# (Move files within the ads/ directory rather than director itself to allow mounting at ads/)
+# (Copy files within the ads/ directory rather than directory itself to allow mounting at ads/)
 if [ ! -f "${CS_ROOT}/data/ads/master.logfile" ]; then
-   echo "Moving stashed cyclecloud data from container to mounted data disk on first start..."
-   pushd ${CS_ROOT}/data
-   rm -rf ./ads
-   mkdir -p ./ads
-   mv /opt_cycle_server/data/ads/* ./ads/
-   popd
+    echo "Copying stashed cyclecloud data from container to mounted data disk on first start..."
+    mkdir -p "${CS_ROOT}/data/ads"
+    find "${CS_ROOT}/data/ads" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    copy_contents "${STASH_ROOT}/data/ads" "${CS_ROOT}/data/ads"
 fi
 
 # Copy locally stashed CycleCloud work dir to mounted work dir (need to retain
 # previously deployed jetpack and project versions but ensure the current version is staged)
-pushd ${CS_ROOT}
-cp -a /opt_cycle_server/work/* ./work/ 
-popd
+copy_contents "${STASH_ROOT}/work" "${CS_ROOT}/work"
+
+CLI_HOME="${CS_ROOT}/work/cli-home"
+mkdir -p "${CLI_HOME}"
+export HOME="${CLI_HOME}"
 
 
 if [ -f "$CS_ROOT/logs/catalina.err" ]; then
@@ -74,7 +110,9 @@ if [ "${NEEDS_RESTORE}" == "true" ]; then
     echo "yes" | ${CS_ROOT}/util/restore.sh
 fi
 
-# Now run or re-run the install script to ensure all accounts are configured
+# Now run or re-run the install script to ensure all accounts are configured.
+# CYCLECLOUD_PASSWORD is read from the environment by the install script so it is
+# not expanded into the shell trace (set -x).
 # options : 
 #     DRYRUN="--dryrun" for testing
 #     NO_DEFAULT_ACCOUNT="--noDefaultAccount" to disable initial CycleCloud account creation
@@ -103,7 +141,7 @@ else
 fi
 
 python3 /cs-install/scripts/cyclecloud_install.py \
-    ${IDENTITY_TYPE} --username=${CYCLECLOUD_USERNAME} --password="${CYCLECLOUD_PASSWORD}" \
+    ${IDENTITY_TYPE} --username=${CYCLECLOUD_USERNAME} \
     --publickey="${CYCLECLOUD_USER_PUBKEY}" \
     --storageAccount=${CYCLECLOUD_STORAGE} \
     --resourceGroup=${CYCLECLOUD_RESOURCE_GROUP} ${DRYRUN} ${NO_DEFAULT_ACCOUNT} \
@@ -141,4 +179,3 @@ do
   sleep 600
   ${CS_ROOT}/cycle_server status || exit
 done
-

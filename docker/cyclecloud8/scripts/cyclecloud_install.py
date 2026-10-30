@@ -63,13 +63,17 @@ def _write_config_data(data, filename):
     _catch_sys_error(["/opt/cycle_server/cycle_server", "import_data","-f", data_file])
 
 
+def _redact_cmd(cmd_list):
+    return [re.sub(r"^(--password=).*", r"\1***", str(arg)) for arg in cmd_list]
+
 def _catch_sys_error(cmd_list):
     try:
         output = check_output(cmd_list)
-        print(cmd_list)
+        print(_redact_cmd(cmd_list))
         print(output)
         return output
     except CalledProcessError as e:
+        e.cmd = _redact_cmd(e.cmd)
         print("Error with cmd: %s" % e.cmd)
         print("Output: %s" % e.output)
         raise
@@ -129,30 +133,17 @@ def generate_password_string():
     random.shuffle(random_pw_chars)
     return ''.join(random_pw_chars)
 
-def reset_cyclecloud_pw(username):
-
-    reset_pw = subprocess.Popen( [cs_cmd, "reset_access", username],
-                                stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, )
-    reset_out, reset_err = reset_pw.communicate( b"yes\n" )
-    print(reset_out)
-    if reset_err:
-        print("Password reset error: %s" % (reset_err))
-    out_split = reset_out.rsplit(None, 1)
-    pw = out_split.pop().decode("utf-8")
-    print("Disabling forced password reseet for {}".format(username))
-    update_cmd = 'update AuthenticatedUser set ForcePasswordReset = false where Name=="%s"' % (username)
-    _catch_sys_error([cs_cmd, 'execute', update_cmd])
-    return pw 
-
-
 def setup_local_account(admin_user, password, webserver_port):
     cyclecloud_admin_pw = ""
     if password:
         print('Password specified, using it as the admin password')
         cyclecloud_admin_pw = password
     else:
+        # The random password is intentionally neither shown nor persisted, and it
+        # changes on each start. The admin user should generally not be used:
+        # users are expected to add their own accounts at runtime (often via a
+        # ConfigMap) or sign in with Entra. If admin access is needed, run
+        # `/opt/cycle_server/cycle_server reset_access <username>` in the container.
         cyclecloud_admin_pw = generate_password_string()
 
     account_data = [
@@ -172,11 +163,6 @@ def setup_local_account(admin_user, password, webserver_port):
 
     _write_config_data(account_data, "account_data.json")
     sleep(5)
-
-    # If using a random password, we need to reset it on each container restart (since we regenerated it above)
-    # But do is AFTER user is created in CC
-    if not password:
-        cyclecloud_admin_pw = reset_cyclecloud_pw(admin_user)
 
     initialize_cyclecloud_cli(admin_user, cyclecloud_admin_pw, webserver_port)
 
@@ -703,8 +689,8 @@ def main():
 
     parser.add_argument("--password",
                         dest="password",
-                        default="",
-                        help="The password for the CycleCloud UI user")
+                        default=os.environ.get("CYCLECLOUD_PASSWORD", ""),
+                        help="The password for the CycleCloud UI user (defaults to $CYCLECLOUD_PASSWORD)")
 
     parser.add_argument("--publickey",
                         dest="publickey",
@@ -791,7 +777,8 @@ def main():
                         help="The UID for the CycleCloud Entra service account")
     args = parser.parse_args()
 
-    print("Debugging arguments: %s" % args)
+    secret_args = ("password", "applicationSecret")
+    print("Debugging arguments: %s" % {k: ("***" if k in secret_args and v else v) for k, v in vars(args).items()})
 
     if not already_installed():
         configure_msft_repos(args.insidersBuild)

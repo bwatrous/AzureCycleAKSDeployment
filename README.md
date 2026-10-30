@@ -1,158 +1,338 @@
-# AzureCycleAKSDeployment
+# Deploy Azure CycleCloud on AKS
 
-Deploy Azure CycleCloud in a new [Azure Kubernetes](https://docs.microsoft.com/en-us/azure/aks/) cluster using the [AzureRM Terraform Provider](https://www.terraform.io/docs/providers/azurerm/r/kubernetes_cluster.html) and storing the container images in an [Azure Container Registry](https://docs.microsoft.com/en-us/azure/container-registry/).
+Build a CycleCloud 8 insiders image, push it to Azure Container Registry (ACR), deploy Azure Kubernetes Service (AKS) with Bicep, and install CycleCloud with Helm.
 
+This walkthrough follows the tested WSL workflow. Run the commands in a **WSL Bash terminal**, with Docker available in WSL. Azure authentication and Docker authentication are separate steps so that Azure CLI does not try to invoke Windows Docker.
 
-For this  README, we'll use  the name 'cccontainerreguswest2' for the ACR registry and use the "West US 2" region in Azure.
+Follow this page in order: build and push the image, complete the linked Bicep guide in step 4, then return here to connect to AKS and install CycleCloud. Infrastructure configuration and deployment instructions live only in the Bicep guide. The service account must currently be applied separately.
 
-## Pre-Requisites
+## 1. Get the repository and check prerequisites
 
-* Install the Azure CLI
-* Install Docker and Terraform
-* Prepare a new [Azure Container Registry](https://docs.microsoft.com/en-us/azure/container-registry/) to store the CycleCloud container images.
+All subsequent commands run from the repository root unless a command explicitly changes directory.
 
+You need:
 
-## Build and push the Azure Cyclecloud Container Image
+- Azure CLI authenticated to the appropriate tenant and subscription.
+- Docker accessible from WSL.
+- An existing ACR, virtual network, CycleCloud workload resource group, and CycleCloud storage account.
+- Permissions to deploy resources and assign Azure roles at the relevant scopes; see the [Bicep prerequisites](./bicep/README.md#prerequisites).
+- An SSH public key for AKS nodes.
+- Linux `kubectl` and Helm available in WSL before installing the application; installation guidance is in step 5.
 
-Log in to the Azure CLI
-``` bash
+```bash
 az login
+az version
+docker version
+az account set --subscription '<deployment-subscription-name-or-id>'
+az account show --query "{Name:name,Id:id}" -o table
 ```
 
-Create the Container Registry
-``` bash
-az group create --name cccontainerreg-rg --location westus2
-az acr create --resource-group cccontainerreg-rg --name cccontainerreguswest2 --sku Premium
+Confirm that the selected subscription is the one you intend to use before continuing.
+
+## 2. Build the CycleCloud image in WSL
+
+Set these values for the existing ACR where you will push the image. Use this same registry when configuring Bicep in step 4:
+
+```bash
+ACR_NAME='<container-registry-name>'
+ACR_SUBSCRIPTION_ID='<acr-subscription-id>'
+ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --subscription "$ACR_SUBSCRIPTION_ID" --query loginServer --output tsv)
+IMAGE_TAG='<your-alias>-symphony-test'
+IMAGE="${ACR_LOGIN_SERVER}/cyclecloud:${IMAGE_TAG}"
 ```
 
-### CycleCloud 8.x
-Next, build and deploy the CycleCloud 8 container to ACR as follows:
-``` bash
+The build context must be the [CycleCloud 8 Docker directory](./docker/cyclecloud8/). Use the [Ubuntu insiders Dockerfile](./docker/cyclecloud8/Dockerfile.ubuntu.insiders) explicitly:
+
+```bash
 cd docker/cyclecloud8
-az acr login -n cccontainerreguswest2
-docker build -t cccontainerreguswest2.azurecr.io/cyclecloud8:latest .
-docker push cccontainerreguswest2.azurecr.io/cyclecloud8:latest
+docker build -f Dockerfile.ubuntu.insiders -t "$IMAGE" .
+cd ../..
 ```
 
+This builds an insiders/testing image; it is not a pinned production-release recipe.
 
-### CycleCloud 7.x
-If you require CycleCloud 7.9.x, you can build and deploy a 7.9 container to ACR as follows:
-``` bash
-cd docker/cyclecloud7
-az acr login -n cccontainerreguswest2
-docker build -t cccontainerreguswest2.azurecr.io/cyclecloud7:latest .
-docker push cccontainerreguswest2.azurecr.io/cyclecloud7:latest
-```
+To build on AlmaLinux 9 instead, use the [plain Dockerfile](./docker/cyclecloud8/Dockerfile) (`-f Dockerfile`). It installs the stable CycleCloud 8 repository on the latest `almalinux:9` base image.
 
+### Smoke-test the image before pushing
 
-## Deploy the AKS cluster
-
-Next, deploy the AKS cluster using Terraform.  (Alternatively, you may create the AKS cluster manually via the Portal  or Azure CLI.)
-
-Ensure that the cluster is deployed to the same  region as the ACR registry when prompted.
+From the repository root, run the [container smoke test](./docker/cyclecloud8/tests/smoke.sh):
 
 ```bash
-cd terraform
-terraform apply
-
+bash docker/cyclecloud8/tests/smoke.sh "$IMAGE"
 ```
 
-## Assign the Roles to the Cluster's Managed Identity
+The test requires Docker, Bash, and OpenSSL on the host and an already-built image.
+It tests four disposable containers sequentially using the normal startup script:
+one with image-provided directories, then one with empty host folders bind-mounted
+at `/opt/cycle_server/{work,config,data}`, then a fresh container mounting
+those same populated folders, then an upgraded image on those folders. All volume cases use a read-only root filesystem
+and writable temporary mounts for `/tmp`, `/opt/cycle_server/logs`,
+`/opt/cycle_server/.ssh`, and `/opt/cycle_server/system`, matching the chart's
+writable paths (the chart mounts `system` as an `emptyDir`).
+Each case checks that the
+default user and startup process run as `cycle_server` (UID/GID `1169`), waits for
+local CLI configuration to be refreshed by that startup, checks CycleCloud's
+service status, and requires HTTP 200
+from HTTPS `/health_monitor`, the endpoint used by the chart's probes.
+It exits nonzero on failure and prints the last 100 startup log lines.
 
-Once the AKS cluster is deployed, the System Assigned Managed Identity for the AKS cluster and the User Assigned Managed Identity for the CycleCloud Pod must be permissioned.
+The empty-volume case creates a unique `.cyclecloud-smoke.*` working directory
+under the current directory. An isolated root helper container sets ownership of
+the three empty folders to `root:1169` with mode `2775`, modeling Kubernetes
+group-writable volumes without assuming application-UID ownership; the
+application itself still runs as the image's default non-root user. The test
+checks mount-root ownership, permissions, and group writability before startup
+and after initialization, restart, and upgrade. Temporary volume roots use the
+same ownership and permissions.
+The test
+verifies that startup populates the persistent folders, copies the image's
+`system` directory into ephemeral storage, and leaves the mounted directories writable.
+Before replacing the container, the test writes a marker in each mounted directory,
+removes one image-provided config file, edits another, and stops CycleCloud cleanly.
+The existing-volume case repeats the startup and health checks, verifies that all
+three markers survived, that the missing config file was restored from the image,
+and that the local config edit was not overwritten. The host folders are
+retained between these cases and removed only at the end.
 
-> [!IMPORTANT]
-> These instructions are based on the [AAD Pod Identity](https://github.com/Azure/aad-pod-identity) readme and may be out of date.  Refer to source for the most up-to-date instructions.
+A final upgrade case builds a temporary image from the tested one, adding a new
+config file, changing an existing config file, and adding a system file in the
+image stash, then starts it on the same volumes. It verifies that the new config
+file is added, the persisted config file is not overwritten, and `system` comes
+from the new image. The temporary image is removed on exit.
 
-First, permission the AKS Cluster's system-assigned identity following the instructions in [AAD Pod Identity Pre-requisites](https://github.com/Azure/aad-pod-identity/blob/master/docs/readmes/README.msi.md#pre-requisites---role-assignments) documentation.
-```bash
-SUBSCRIPTION_ID=$( az account show --query id -o tsv )
-AGENT_POOL_CLIENT_ID=$( az aks show -g cc-aks-tf-rg -n cc-aks-tf-cluster --query identityProfile.kubeletidentity.clientId -o tsv )
+On every start, the startup script replaces `system` from the image. Persistent
+`config` is seeded when empty; otherwise only files that are missing are added from
+the image, and existing files and `config/data` are left untouched.
+Population copies directory contents without replaying source-root metadata onto
+mounted roots. Datastore initialization also preserves a directly mounted
+`data/ads` root.
+Config merging aborts startup if either archive creation or extraction fails.
+Files copied before a failure may remain; correct the reported source or
+destination error and inspect any newly created files for incomplete contents
+before restarting to add the remaining missing files. Existing paths are not
+repaired automatically because the merge preserves them. This is not an atomic
+merge or rollback.
 
-az role assignment create --role "Virtual Machine Contributor" --assignee ${AGENT_POOL_CLIENT_ID} --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/cc-aks-tf-nodes-rg
-az role assignment create --role "Managed Identity Operator" --assignee ${AGENT_POOL_CLIENT_ID}  --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/cc-aks-tf-nodes-rg
-az role assignment create --role "Managed Identity Operator" --assignee ${AGENT_POOL_CLIENT_ID}  --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/cc-aks-tf-nodes-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cc-aks-tf-cluster-agentpool
-az role assignment create --role "Managed Identity Operator" --assignee ${AGENT_POOL_CLIENT_ID}  --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/cc-aks-tf-nodes-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cc-aks-tf-ui
-
-```
-
-
-## Launch the CycleCloud AKS Pod
-
-Get the AKS Credentials for the new cluster
-```bash
-az aks get-credentials --resource-group cc-aks-tf-rg  --name cc-aks-tf
-```
-
-After the terraform cluster is up, we still need to enable [AAD Pod Identity](https://github.com/Azure/aad-pod-identity):
-```bash
-kubectl apply -f https://raw.githubusercontent.com/Azure/aad-pod-identity/master/deploy/infra/deployment-rbac.yaml
-```
-
-Next, attach the ACR registry to the cluster to allow it to pull the container image:
-```bash
-az aks update --attach-acr cccontainerreguswest2 --resource-group cc-aks-tf-rg  --name cc-aks-tf
-```
-
-Now permission the CycleCloud User-Assigned Managed Identity:
-```bash
-SUBSCRIPTION_ID=$( az account show --query id -o tsv )
-CLIENT_ID=$( az identity show --resource-group cc-aks-tf-nodes-rg --name cc-aks-tf-ui --query clientId -o tsv )
-
-az role assignment create --assignee ${CLIENT_ID} --role=Contributor --scope=/subscriptions/${SUBSCRIPTION_ID}
-```
-
-Optionally, create a new Resource Group to hold the compute cluster resources (if you do not already have a target Resource Group).
-This should generally be a different Resource Group from the AKS nodes Resource Group.
-```bash
-az group create -l westus2 -n cccomputerguswest2
-```
-
-Finally, we're ready to deploy the CycleCloud Pod.   By default, this deployment will have a public IP.  To disable, the public IP, uncomment the "annotations" in the Service definition in `cyclecloud.yaml`.
-
-> [!IMPORTANT]
-> Update the cyclecloud YAML File with the new Managed Identity ID Resource ID and Client ID, and other variables.  The Client ID will change for each terraform cluster deployment even if the rest of the variables are constant.
+For focused filesystem regressions without starting the CycleCloud service:
 
 ```bash
-SUBSCRIPTION_ID=$( az account show --query id -o tsv )
-CLIENT_ID=$( az identity show --resource-group cc-aks-tf-nodes-rg --name cc-aks-tf-ui --query clientId -o tsv )
-CYCLECLOUD_USERNAME="your_username"
-CYCLECLOUD_PASSWORD="your_password"
-CYCLECLOUD_STORAGE="ccstorageuswest2"
-CYCLECLOUD_USER_PUBKEY="your SSH pub key here"
-# Use the cyclecloud7:latest tag for a CycleCloud 7.9.x container instead of CycleCloud 8
-CYCLECLOUD_CONTAINER_IMAGE="cccontainerreguswest2.azurecr.io/cyclecloud8:latest"
-CYCLECLOUD_RESOURCE_GROUP="cccomputerguswest2"
-
-# Feel free to skip the sed commands and simply  edit the yaml file
-sed -i.bak "s|%SUBSCRIPTION_ID%|${SUBSCRIPTION_ID}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CLIENT_ID%|${CLIENT_ID}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_USERNAME%|${CYCLECLOUD_USERNAME}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_PASSWORD%|${CYCLECLOUD_PASSWORD}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_STORAGE%|${CYCLECLOUD_STORAGE}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_USER_PUBKEY%|${CYCLECLOUD_USER_PUBKEY}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_CONTAINER_IMAGE%|${CYCLECLOUD_CONTAINER_IMAGE}|g" ./cyclecloud.yaml
-sed -i.bak "s|%CYCLECLOUD_RESOURCE_GROUP%|${CYCLECLOUD_RESOURCE_GROUP}|g" ./cyclecloud.yaml
-
-kubectl apply -f cyclecloud.yaml
+bash docker/cyclecloud8/tests/mounts.sh ubuntu:24.04
 ```
 
-## Description of values.yaml parameters for helm chart
+Use an already-present Linux image with Bash, GNU coreutils, find, tar, and
+`setpriv` (for example Ubuntu or AlmaLinux). This isolated, network-disabled test
+runs the checked-out startup script with a stub installer on a read-only root
+filesystem. It checks root-owned group-writable and application-owned roots,
+including a direct `data/ads` mount, hidden and unusual filenames, symlinks,
+executables, restart merging, stale-file removal, and empty sources. It also
+verifies that archive creation and extraction failures prevent installer
+execution, corrected retries succeed, and first-start backup counting and
+restore selection remain unchanged.
+It is not a full-image service-health test.
 
-azureIdentity: This parameter is only required when using managed identity for cyclecloud orchestration. It basically stores the resource id of managed identity and client id which would be used in Deployment.yaml file in case of using pod identity.
+The chart invokes the startup script through Bash without modifying image files
+at runtime, so it also supports `securityContext.containerSecurityContext.readOnlyRootFilesystem: true`.
+The default remains `false`.
 
-Parameters under Values.cycle are cyclecloud related parameters.Most of them are self-explantory, details of few:
+The containers have no external network, published ports, or Azure
+credentials. Only the disposable test folders are host-mounted.
+The installer uses its local `--dryrun` mode and
+`--noDefaultAccount`, with a disposable admin password. TLS certificate validation
+is disabled only for this isolated container's self-signed certificate, matching
+the chart's probes. Containers, anonymous volumes, and test folders are removed
+on exit (a root helper removes files owned by the container user).
+This is an integration smoke test, not an Azure identity, Kubernetes PVC,
+package-vulnerability, or compute-provisioning test.
 
-configureDefaultAccount: If you want to create an azure account by default then it will be created if set to true.
+Startup defaults to a 900-second timeout per case; override it with a second argument:
 
-storage: Specifies the storage account to use in case of intial account creation.
+```bash
+bash docker/cyclecloud8/tests/smoke.sh "$IMAGE" 1200
+```
 
-useWorkloadIdentity: If you are using workload identity then this needs to be set to true and azureIdentity is not required in this case.
+## 3. Authenticate WSL Docker and push the image
 
-storage_managed_identity: When using managed identity for storage account you need to set this to true. Also you need to assign Storage Blob Reader role to this identity for storage account. 
-Note: If you are using managed identity for storage you also need to assign Storage Blob Data Contributor role to the Cyclecloud identity (Workload Identity or Managed Identity)
+Do not use plain `az acr login` for this workflow. In a mixed Windows/WSL setup it can try to run Windows Docker. Instead, obtain an ACR token and pass it to the Docker client running in WSL:
 
-generate_cs_config: By default the container script will generate cycle_server.properties file but if you want to use ConfigMap for cycle_server.properties then you can disable this option to skip generation of file. 
+```bash
+TOKEN=$(az acr login -n "$ACR_NAME" --expose-token --output tsv --query accessToken)
 
+test -n "$TOKEN" && echo "TOKEN OK" || echo "TOKEN FAILED"
+```
 
+Continue only if the Azure command succeeded and you see `TOKEN OK`. Do not print or share the token.
 
+```bash
+echo "$TOKEN" | docker login "$ACR_LOGIN_SERVER" --username 00000000-0000-0000-0000-000000000000 --password-stdin
+```
+
+After Docker reports `Login Succeeded`, push the image:
+
+```bash
+docker push "$IMAGE"
+```
+
+Keep the exact image reference for the Helm configuration in step 6.
+
+## 4. Configure and deploy AKS with Bicep
+
+Follow the [Bicep deployment guide](./bicep/README.md) in the same WSL terminal.
+
+At the end, the guide asks you to record the deployment outputs and return to the repository root. Then continue with step 5 below.
+
+## 5. Install client tools and connect to AKS
+
+Set the cluster details using the outputs recorded in the Bicep guide:
+
+```bash
+AKS_NAME='<aksClusterName-output>'
+AKS_RESOURCE_GROUP='<aksResourceGroupName-output>'
+```
+
+Check for Linux tools in WSL:
+
+```bash
+kubectl version --client
+helm version --short
+```
+
+If `kubectl` is missing, follow the [Linux installation instructions](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/). Choose a client version within one minor version of the AKS API server, rather than copying a fixed version from another deployment. You can check the cluster version with:
+
+```bash
+az aks show --name "$AKS_NAME" --resource-group "$AKS_RESOURCE_GROUP" --query kubernetesVersion --output tsv
+```
+
+For Helm, follow the [official installation instructions](https://helm.sh/docs/intro/install/). On WSL installations with Snap enabled, the tested installation command was:
+
+```bash
+sudo snap install helm --classic
+helm version --short
+```
+
+### Choose the kubeconfig location before retrieving credentials
+
+For a WSL-local kubeconfig:
+
+```bash
+export KUBECONFIG="$HOME/.kube/config"
+```
+
+Alternatively, to share the Windows kubeconfig as in the tested workflow, use this **instead**, replacing the Windows username:
+
+```bash
+export KUBECONFIG='/mnt/c/Users/<windows-username>/.kube/config'
+```
+
+Use one location consistently. Get credentials into that file and explicitly select the context:
+
+```bash
+az aks get-credentials --name "$AKS_NAME" --resource-group "$AKS_RESOURCE_GROUP" --file "$KUBECONFIG" --context "$AKS_NAME"
+
+kubectl config use-context "$AKS_NAME"
+kubectl config current-context
+kubectl get nodes
+kubectl get pods -A
+```
+
+The context must match your intended cluster; it was `cyclecloud-aks` in the tested deployment. Stop if the context is wrong or the API server is unreachable.
+
+If you run Windows Azure CLI from WSL, it may require a Windows-form path for `--file`. Use the equivalent path, such as `C:/Users/<windows-username>/.kube/config`, for that Azure CLI argument while keeping `KUBECONFIG` set to the `/mnt/c/...` path for Linux `kubectl`.
+
+## 6. Configure CycleCloud and apply its service account
+
+This is still a manual configuration step. Bicep does not update the chart or the Kubernetes service-account manifest.
+
+Edit the [service-account manifest](./charts/cyclecloud/cyclecloud-sa.yaml):
+
+- Set `metadata.annotations.azure.workload.identity/client-id` to the literal `workloadIdentityClientId` output recorded in the Bicep guide.
+- Keep `metadata.name: cyclecloud-sa` and `metadata.namespace: default`, matching the Bicep federation settings.
+- Do not put shell variables or Helm expressions in this plain Kubernetes YAML.
+
+Keep the tracked [chart defaults](./charts/cyclecloud/values.yaml) unchanged. Create `charts/cyclecloud/values.local.yaml` containing only your environment-specific overrides from the table below, using the same nested YAML structure as the defaults (for example, `containerImage` under `cycle`).
+
+Helm merges this file over the chart's base `values.yaml` only when you explicitly pass `-f ./charts/cyclecloud/values.local.yaml`, as shown in step 7. Placing an extra file in the chart directory does not load it automatically. Replacing the existing `values.yaml` changes the defaults rather than creating an override layer.
+
+| Value | Setting |
+|-------|---------|
+| `cycle.containerImage` | The exact image pushed in step 3, including registry and tag. Run `printf '%s\n' "$IMAGE"` to display it. |
+| `cycle.useWorkloadIdentity` | `true`. |
+| `cycle.configureDefaultAccount` | `true` to configure the initial Azure account. |
+| `cycle.storage` | CycleCloud storage account name from the infrastructure inputs. |
+| `cycle.resourceGroup` | CycleCloud workload resource group, not the AKS node resource group. |
+| `cycle.username`, `cycle.password` | Your initial CycleCloud login credentials. |
+| `cycle.userPubKey` | Your SSH public key for CycleCloud compute access. |
+| `cycle.storage_managed_identity` | Resource ID of the identity used by compute nodes for storage access; do not assume it is the pod workload identity. |
+| `resources`, `cycle.webServerMaxHeapSize` | Resource requests, limits, and JVM heap suitable for your nodes. |
+
+The tested small configuration used a 1-CPU / 8-GiB request, a 2-CPU / 8-GiB limit, and a `4096M` heap on a 4-vCPU / 16-GiB node. This is test sizing, not a production recommendation.
+
+> [!WARNING]
+> The existing `.gitignore` excludes `values.local.yaml`. Do not force-add it or commit passwords or personal configuration.
+
+The pod identity client ID belongs in the service-account annotation. Setting `azureIdentity.clientID` in chart values does not configure the current templates.
+
+From the repository root, validate and apply the service account:
+
+```bash
+kubectl apply --dry-run=server -f ./charts/cyclecloud/cyclecloud-sa.yaml
+kubectl apply -f ./charts/cyclecloud/cyclecloud-sa.yaml
+kubectl get serviceaccount cyclecloud-sa -n default
+```
+
+Helm does not create this account because the manifest is outside the chart's templates directory. Reapply it before a Helm upgrade if its identity annotation changes.
+
+## 7. Validate and install the Helm chart
+
+The service defaults to a public `LoadBalancer`. Review network exposure before installing.
+
+```bash
+helm lint ./charts/cyclecloud -f ./charts/cyclecloud/values.local.yaml
+```
+
+Render the chart and validate it against the cluster:
+
+```bash
+set -o pipefail
+helm template cyclecloud ./charts/cyclecloud --namespace default -f ./charts/cyclecloud/values.local.yaml | kubectl apply --dry-run=server --validate=strict -f -
+```
+
+Both rendering and server validation must succeed. These checks do not prove image availability or runtime Azure permissions.
+
+Install or upgrade:
+
+```bash
+helm upgrade --install cyclecloud ./charts/cyclecloud --namespace default -f ./charts/cyclecloud/values.local.yaml
+```
+
+## 8. Wait for CycleCloud to become ready
+
+```bash
+kubectl get pods,pvc,svc -n default
+kubectl rollout status statefulset/cyclecloud -n default --timeout=15m
+kubectl get pod cyclecloud-0 -n default
+```
+
+Initial startup can take several minutes. The tested deployment progressed from `ContainerCreating` to `0/1 Running`, then reached:
+
+```text
+NAME           READY   STATUS    RESTARTS   AGE
+cyclecloud-0   1/1     Running   0          4m55s
+```
+
+The checkpoint is **`1/1 Running`**, not just `Running`. Also verify that the PVC is `Bound` and the service has an external address:
+
+```bash
+kubectl get pvc,svc -n default
+```
+
+Open `https://<cyclecloud-service-external-ip>` in your browser and verify that you can sign in with the configured CycleCloud credentials. A default self-signed certificate may trigger a browser warning; confirm the endpoint is yours before proceeding.
+
+If readiness times out or the pod restarts, inspect:
+
+```bash
+kubectl describe pod cyclecloud-0 -n default
+kubectl logs cyclecloud-0 -n default
+kubectl get events -n default --sort-by=.metadata.creationTimestamp
+```
+
+Check image-pull errors, PVC provisioning, node capacity, application logs, and workload identity configuration before continuing to scheduler or autoscaling tests. A ready CycleCloud pod alone does not verify compute provisioning permissions or job completion.

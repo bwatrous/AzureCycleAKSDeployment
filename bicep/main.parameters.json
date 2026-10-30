@@ -1,0 +1,128 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "prefix": {
+      "value": "cyclecloud"
+    },
+    "resourceGroupName": {
+      "value": "<your-alias>-cyclecloud-aks-rg"
+    },
+    "nodeResourceGroupName": {
+      "value": "<your-alias>-cyclecloud-aks-nodes-rg"
+    },
+    "location": {
+      "value": "westus2"
+    },
+    "virtualNetworkName": {
+      "value": "<your-alias>-cyclecloud-vnet"
+    },
+    "virtualNetworkAddressPrefixes": {
+      "value": [
+        "10.10.0.0/16"
+      ]
+    },
+    "hubVirtualNetworkResourceId": {
+      "value": ""
+    },
+    "createHubToSpokePeering": {
+      "value": true
+    },
+    "useHubGateway": {
+      "value": false
+    },
+    "systemNodeSubnetName": {
+      "value": "SystemSubnet"
+    },
+    "systemNodeSubnetAddressPrefix": {
+      "value": ""
+    },
+    "apiServerVnetIntegrationEnabled": {
+      "value": false
+    },
+    "apiServerSubnetName": {
+      "value": "APIServerSubnet"
+    },
+    "apiServerSubnetAddressPrefix": {
+      "value": ""
+    },
+    "networkPlugin": {
+      "value": "azure"
+    },
+    "networkPluginMode": {
+      "value": ""
+    },
+    "serviceCidr": {
+      "value": "172.16.0.0/16"
+    },
+    "dnsServiceIP": {
+      "value": "172.16.0.10"
+    },
+    "podCidr": {
+      "value": ""
+    },
+    "systemNodeVmSize": {
+      "value": "Standard_D4ds_v5"
+    },
+    "systemNodeCount": {
+      "value": 1
+    },
+    "apiServerAuthorizedIpRanges": {
+      "value": []
+    },
+    "entraIntegrationEnabled": {
+      "value": false
+    },
+    "azureRbacEnabled": {
+      "value": false
+    },
+    "entraAdminGroupObjectIds": {
+      "value": []
+    },
+    "disableLocalAccounts": {
+      "value": false
+    },
+    "privateClusterEnabled": {
+      "value": false
+    },
+    "workloadIdentityEnabled": {
+      "value": true
+    },
+    "workloadIdentityNamespace": {
+      "value": "default"
+    },
+    "workloadIdentityServiceAccountName": {
+      "value": "cyclecloud-sa"
+    },
+    "workloadResourceGroupSubscriptionId": {
+      "value": "<workload-resource-group-subscription-id>"
+    },
+    "workloadResourceGroupName": {
+      "value": "<workload-resource-group-name>"
+    },
+    "storageAccountSubscriptionId": {
+      "value": "<storage-account-subscription-id>"
+    },
+    "storageAccountResourceGroupName": {
+      "value": "<storage-account-resource-group>"
+    },
+    "storageAccountName": {
+      "value": "<storage-account-name>"
+    },
+    "containerRegistrySubscriptionId": {
+      "value": "<acr-subscription-id>"
+    },
+    "containerRegistryResourceGroupName": {
+      "value": "<acr-resource-group>"
+    },
+    "containerRegistryName": {
+      "value": "<acr-name>"
+    },
+    "tags": {
+      "value": {
+        "workload": "cyclecloud",
+        "managedBy": "bicep"
+      }
+    }
+  }
+}

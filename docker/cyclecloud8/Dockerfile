@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/mirror/docker/library/ubuntu:22.04
+FROM almalinux:9
 
 WORKDIR /cs-install
 ENV CS_UID=1169
@@ -7,35 +7,40 @@ ENV CS_ROOT=/opt/cycle_server
 
 ADD https://aka.ms/downloadazcopy-v10-linux /tmp/azcopy_linux.tar.gz
 
-RUN yum update -y \
-    && echo \
-    && yum install -y java-1.8.0-openjdk \
-    && yum install -y vim-enhanced \
-    && yum install -y wget \
-    && yum install -y unzip \
-    && yum install -y ncurses \
+RUN dnf update -y \
+    && dnf install -y \
+        java-1.8.0-openjdk-headless \
+        vim-enhanced \
+        wget \
+        unzip \
+        tar \
+        findutils \
+        diffutils \
+        procps-ng \
+        which \
+        hostname \
+        ncurses \
+        python3 \
+        python-unversioned-command \
     && rpm --import https://packages.microsoft.com/keys/microsoft.asc \
-    && echo -e "[azure-cli]" > /etc/yum.repos.d/azure-cli.repo \
-    && echo -e "name=Azure CLI" >> /etc/yum.repos.d/azure-cli.repo \
-    && echo -e "baseurl=https://packages.microsoft.com/yumrepos/azure-cli" >> /etc/yum.repos.d/azure-cli.repo \
-    && echo -e "enabled=1" >> /etc/yum.repos.d/azure-cli.repo \
-    && echo -e "gpgcheck=1" >> /etc/yum.repos.d/azure-cli.repo \
-    && echo -e "gpgkey=https://packages.microsoft.com/keys/microsoft.asc" >> /etc/yum.repos.d/azure-cli.repo \
-    && echo -e "[cyclecloud]"  >> /etc/yum.repos.d/cyclecloud.repo \
-    && echo -e "name=cyclecloud"  >> /etc/yum.repos.d/cyclecloud.repo \
-    && echo -e "baseurl=https://packages.microsoft.com/yumrepos/cyclecloud"  >> /etc/yum.repos.d/cyclecloud.repo \
-    && echo -e "gpgcheck=1"  >> /etc/yum.repos.d/cyclecloud.repo \
-    && echo -e "gpgkey=https://packages.microsoft.com/keys/microsoft.asc"  >> /etc/yum.repos.d/cyclecloud.repo \
-    && yum -y update \
-    && yum install -y azure-cli \
+    && dnf install -y https://packages.microsoft.com/config/rhel/9.0/packages-microsoft-prod.rpm \
+    && dnf install -y azure-cli \
+    && printf '%s\n' \
+        '[cyclecloud]' \
+        'name=cyclecloud' \
+        'baseurl=https://packages.microsoft.com/yumrepos/cyclecloud' \
+        'gpgcheck=1' \
+        'gpgkey=https://packages.microsoft.com/keys/microsoft.asc' \
+        > /etc/yum.repos.d/cyclecloud.repo \
     && tar xzf /tmp/azcopy_linux.tar.gz -C /tmp/ \
     && mv /tmp/azcopy_linux*/azcopy /usr/local/bin/azcopy \
     && rm -rf /tmp/azcopy_linux* \
-    && alternatives --set python /usr/bin/python3
+    && dnf clean all
 
 RUN groupadd -g ${CS_GID} cycle_server \
     && useradd -u ${CS_UID} -g ${CS_GID} -m -d /opt/cycle_server cycle_server \
-    && yum install -y cyclecloud8 \
+    && dnf install -y cyclecloud8 \
+    && dnf clean all \
     && /opt/cycle_server/cycle_server await_startup \
     && /opt/cycle_server/cycle_server execute 'purge where AdType in { "AuthenticatedUser", "Credential", "AuthenticatedSession", "Application.Task", "Cloud.ChefNodeData", "Event", "ClusterEvent", "NodeEvent", "ClusterMetrics", "NodeMetrics", "SystemAspect", "Application.Tunnel" }' \
     && /opt/cycle_server/cycle_server stop \
@@ -60,14 +65,16 @@ RUN echo "Stashing a copy of the cycle_server data directory..." \
     && mkdir -p /opt_cycle_server/  \
     && cp -a /opt/cycle_server/data /opt_cycle_server/  \
     && cp -a /opt/cycle_server/work /opt_cycle_server/  \
+    && cp -a /opt/cycle_server/system /opt_cycle_server/ \
+    && cp -a /opt/cycle_server/config /opt_cycle_server/ \
     && chown -R cycle_server:cycle_server /opt_cycle_server  \
     && ls -ltra  /opt_cycle_server/data/ads/
 
 # Prepare directory structure for mounting persistent volumes
 # Retain content of data, and work directories
 # Clear content of .ssh and logs directories
-# NOTE: we do not persist the config directory since content may change across upgrades
-#       instead, we configure using container startup script
+# NOTE: system and config are restored from /opt_cycle_server by the startup script:
+#       system is replaced on every start, config is seeded or merged without overwriting
 RUN echo "Creating mount location and symlinks for data, .ssh, logs, work" \
     && mkdir -p /mnt/cycle_server/  \
     && mv /opt/cycle_server/data /mnt/cycle_server/ \

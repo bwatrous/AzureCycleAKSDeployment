@@ -1,5 +1,9 @@
 # Local .terraform directories
 **/.terraform/*
+
+# Ignore local values files
+values.*.yaml
+
 .DS_Store
 perf-improvements/
 terraform-aks-azure-cni/cyclecloud/
@@ -23,3 +27,5 @@ install_instructures.txt
 test.yaml
 
 terraform-aks-azure-cni/.terraform.lock.hcl
+# Python bytecode
+__pycache__/
